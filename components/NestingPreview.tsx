@@ -1,8 +1,65 @@
 "use client";
 
 import { formatMm } from "@/lib/config";
-import { NestedSheet, NestingResult } from "@/lib/nesting";
+import { NestedSheet, NestingResult, Placement } from "@/lib/nesting";
 import { panelContour } from "@/lib/dxf";
+import { Operation } from "@/lib/model";
+
+/** Kleur per bewerkingstype, gelijk aan de DXF-laagkleuren. */
+function opColor(layer: Operation["layer"]): string {
+  if (layer.startsWith("DADO")) return "#dc2626";
+  if (layer.startsWith("BOOR")) return "#2563eb";
+  if (layer.startsWith("CABINEO")) return "#9333ea";
+  if (layer.startsWith("RUG")) return "#16a34a";
+  return "#666";
+}
+
+/**
+ * Bewerkingen van één geplaatst onderdeel, in plaatcoördinaten en gespiegeld
+ * voor SVG (y omlaag). Side-B-bewerkingen (tweede zijde) zijn gestippeld.
+ */
+function PlacementOps({ pl, sheetW }: { pl: Placement; sheetW: number }) {
+  return (
+    <>
+      {pl.panel.ops.map((op, i) => {
+        if (op.kind === "text") return null;
+        const dash = op.side === "B" ? "14 10" : undefined;
+        const color = opColor(op.layer);
+        if (op.kind === "rect") {
+          const yLow =
+            op.side === "B" ? pl.width - op.y - op.h : op.y;
+          return (
+            <rect
+              key={i}
+              x={pl.x + op.x}
+              y={sheetW - (pl.y + yLow + op.h)}
+              width={op.w}
+              height={op.h}
+              fill={color}
+              fillOpacity={0.25}
+              stroke={color}
+              strokeWidth={2}
+              strokeDasharray={dash}
+            />
+          );
+        }
+        const cy = op.side === "B" ? pl.width - op.cy : op.cy;
+        return (
+          <circle
+            key={i}
+            cx={pl.x + op.cx}
+            cy={sheetW - (pl.y + cy)}
+            r={Math.max(op.diameter / 2, 9)}
+            fill="none"
+            stroke={color}
+            strokeWidth={3}
+            strokeDasharray={dash}
+          />
+        );
+      })}
+    </>
+  );
+}
 
 function SheetSvg({ sheet }: { sheet: NestedSheet }) {
   const { sheetLength: L, sheetWidth: W } = sheet;
@@ -26,6 +83,7 @@ function SheetSvg({ sheet }: { sheet: NestedSheet }) {
               stroke="#333"
               strokeWidth={3}
             />
+            <PlacementOps pl={pl} sheetW={W} />
             <text
               x={pl.x + pl.length / 2}
               y={W - (pl.y + pl.width / 2)}
@@ -33,6 +91,7 @@ function SheetSvg({ sheet }: { sheet: NestedSheet }) {
               textAnchor="middle"
               dominantBaseline="central"
               fill="#333"
+              opacity={0.75}
             >
               {pl.panel.id}
             </text>
@@ -40,6 +99,31 @@ function SheetSvg({ sheet }: { sheet: NestedSheet }) {
         );
       })}
     </svg>
+  );
+}
+
+function Legend() {
+  const items: [string, string][] = [
+    ["#dc2626", "dado"],
+    ["#2563eb", "boring"],
+    ["#16a34a", "rugsponning"],
+    ["#9333ea", "Cabineo"],
+  ];
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-neutral-500">
+      {items.map(([color, label]) => (
+        <span key={label} className="inline-flex items-center gap-1">
+          <span className="inline-block h-2 w-2 rounded-sm" style={{ background: color }} />
+          {label}
+        </span>
+      ))}
+      <span className="inline-flex items-center gap-1">
+        <svg width="18" height="6" aria-hidden>
+          <line x1="0" y1="3" x2="18" y2="3" stroke="#666" strokeWidth="2" strokeDasharray="4 3" />
+        </svg>
+        tweede zijde
+      </span>
+    </div>
   );
 }
 
@@ -71,6 +155,7 @@ export default function NestingPreview({
             </span>
           </div>
           <SheetSvg sheet={sheet} />
+          <Legend />
           <button
             type="button"
             className="btn-touch mt-2 w-full rounded-xl bg-neutral-900 px-4 py-2 text-sm font-medium text-white active:bg-neutral-700"

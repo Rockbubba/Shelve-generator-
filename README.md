@@ -75,16 +75,23 @@ Eén DXF (AC1015, mm) per plaat, lagen gescheiden per bewerking:
 | ---- | --------- |
 | `CONTOUR` | doorfrezen (gesloten polylines) |
 | `DADO_7MM` | pocket 7 mm diep |
-| `BOOR_8MM` | deuvelboringen Ø8 |
-| `BOOR_5MM` | Cabineo-boutgaten Ø5 (doorlopend) |
+| `BOOR_8MM_D15` | deuvelboring Ø8, 15 mm diep (dadobodem staander) |
+| `BOOR_8MM_D10` | deuvelboring Ø8, 10 mm diep (plankvlak, blind) |
+| `BOOR_5MM_DOOR` | Cabineo-boutgaten Ø5, doorlopend |
 | `CABINEO_12MM` | Cabineo-pockets 12,5 mm diep |
 | `RUG_SPONNING` | groef 4 mm breed, 10 mm diep |
 | `GRAVURE` | onderdeel-ID's, 0,5 mm diep |
 | `PLAATRAND` | referentie, niet frezen |
 
+DXF is 2D: de freesdiepte reist mee via de laagconventie. Boringen krijgen
+daarom een expliciet diepte-suffix (`_D15` = 15 mm vanaf het vlak,
+`_DOOR` = doorlopend), zodat je in CAM per laag één diepte instelt.
 Bewerkingen aan de tweede zijde (binnenstaanders hebben dado's aan beide
 kanten; plank-onderzijdes) staan gespiegeld op lagen met suffix `_B`:
 het onderdeel wordt daarvoor over de **lange zijde** omgeklapt.
+De nesting-preview in de UI tekent alle bewerkingen mee (gestippeld =
+tweede zijde), zodat je vóór het downloaden kunt controleren of dado's en
+boringen op de juiste plek zitten.
 
 ### Datamodel v2-klaar
 

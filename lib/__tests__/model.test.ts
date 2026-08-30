@@ -175,10 +175,28 @@ describe("dxf-output (acceptatiecriterium 3)", () => {
     expect(dxf).toContain("$INSUNITS");
     expect(dxf).toContain("CONTOUR");
     expect(dxf).toContain("DADO_7MM");
-    expect(dxf).toContain("BOOR_8MM");
     expect(dxf).toContain("GRAVURE");
     expect(dxf).toContain("LWPOLYLINE");
     expect(dxf.trim().endsWith("EOF")).toBe(true);
+  });
+
+  it("boorlagen dragen de freesdiepte in de laagnaam", () => {
+    const all = nesting.sheets.map((s) => sheetToDxf(s)).join("\n");
+    // Staander: deuvelgat in de dadobodem, 15 mm diep.
+    expect(all).toContain("BOOR_8MM_D15");
+    // Plank: blind deuvelgat in het plankvlak (tweede zijde), 10 mm diep.
+    expect(all).toContain("BOOR_8MM_D10_B");
+    // Geen ongesuffixte boorlaag meer: dieptes mogen niet mengen.
+    expect(all).not.toMatch(/^BOOR_8MM$/m);
+    expect(all).not.toMatch(/^BOOR_8MM_B$/m);
+  });
+
+  it("cabineo-boutgaten staan op een doorloop-laag", () => {
+    const cab = buildCabinetModel({ ...ACCEPT, joinery: "cabineo" });
+    const cabNesting = nestPanels(cab.panels, ACCEPT.depth);
+    const all = cabNesting.sheets.map((s) => sheetToDxf(s)).join("\n");
+    expect(all).toContain("BOOR_5MM_DOOR");
+    expect(all).toContain("CABINEO_12MM_B");
   });
 
   it("plankcontour heeft 8 punten (2 hoekinkepingen)", () => {

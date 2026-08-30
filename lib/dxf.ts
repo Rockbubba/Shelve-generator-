@@ -10,25 +10,43 @@
 import { NestedSheet, Placement } from "./nesting";
 import { Operation, Panel } from "./model";
 
-const LAYER_COLORS: Record<string, number> = {
+const BASE_LAYER_COLORS: Record<string, number> = {
   PLAATRAND: 9,
   CONTOUR: 7,
   DADO_7MM: 1,
-  DADO_7MM_B: 1,
   BOOR_8MM: 5,
-  BOOR_8MM_B: 5,
   BOOR_5MM: 4,
-  BOOR_5MM_B: 4,
   CABINEO_12MM: 6,
-  CABINEO_12MM_B: 6,
   RUG_SPONNING: 3,
-  RUG_SPONNING_B: 3,
   GRAVURE: 8,
 };
+
+/** Kleur op basis van de laagnaam zonder diepte-/zijde-suffixen. */
+function layerColor(name: string): number {
+  const base = name.replace(/(_D[0-9_]+|_DOOR|_B)+$/, "");
+  return BASE_LAYER_COLORS[base] ?? 7;
+}
+
+/**
+ * Volledige laagnaam voor een bewerking. Freesdiepte reist in DXF alleen via
+ * de laagconventie mee, dus boringen krijgen een diepte-suffix:
+ * `_D15` = 15 mm diep vanaf het vlak, `_DOOR` = doorlopend. Pockets dragen de
+ * diepte al in hun naam (DADO_7MM, CABINEO_12MM, RUG_SPONNING = 10 mm).
+ * Suffix `_B` = tweede zijde (onderdeel omklappen over de lange zijde).
+ */
+export function operationLayer(op: Operation): string {
+  let name: string = op.layer;
+  if (op.kind === "circle") {
+    name += op.through ? "_DOOR" : `_D${String(op.depth).replace(".", "_")}`;
+  }
+  if (op.side === "B") name += "_B";
+  return name;
+}
 
 class DxfBuilder {
   private lines: string[] = [];
   private handle = 0x100;
+  private usedLayers = new Set<string>();
 
   private nextHandle(): string {
     return (this.handle++).toString(16).toUpperCase();
@@ -39,6 +57,7 @@ class DxfBuilder {
   }
 
   polyline(layer: string, points: [number, number][], closed = true) {
+    this.usedLayers.add(layer);
     this.push(0, "LWPOLYLINE", 5, this.nextHandle(), 100, "AcDbEntity", 8, layer);
     this.push(100, "AcDbPolyline", 90, points.length, 70, closed ? 1 : 0);
     for (const [x, y] of points) {
@@ -47,11 +66,13 @@ class DxfBuilder {
   }
 
   circle(layer: string, cx: number, cy: number, radius: number) {
+    this.usedLayers.add(layer);
     this.push(0, "CIRCLE", 5, this.nextHandle(), 100, "AcDbEntity", 8, layer);
     this.push(100, "AcDbCircle", 10, fmt(cx), 20, fmt(cy), 30, 0, 40, fmt(radius));
   }
 
   text(layer: string, x: number, y: number, height: number, value: string) {
+    this.usedLayers.add(layer);
     this.push(0, "TEXT", 5, this.nextHandle(), 100, "AcDbEntity", 8, layer);
     this.push(
       100, "AcDbText",
@@ -85,14 +106,14 @@ class DxfBuilder {
       2, "CONTINUOUS", 70, 0, 3, "Solid line", 72, 65, 73, 0, 40, 0,
     );
     push(0, "ENDTAB");
-    const layers = Object.keys(LAYER_COLORS);
+    const layers = Array.from(this.usedLayers).sort();
     push(0, "TABLE", 2, "LAYER", 5, "A", 100, "AcDbSymbolTable", 70, layers.length);
     let layerHandle = 0x10;
     for (const name of layers) {
       push(
         0, "LAYER", 5, (layerHandle++).toString(16).toUpperCase(),
         100, "AcDbSymbolTableRecord", 100, "AcDbLayerTableRecord",
-        2, name, 70, 0, 62, LAYER_COLORS[name], 6, "CONTINUOUS",
+        2, name, 70, 0, 62, layerColor(name), 6, "CONTINUOUS",
       );
     }
     push(0, "ENDTAB");
@@ -163,7 +184,7 @@ function opPoint(
 }
 
 function emitOperation(dxf: DxfBuilder, placement: Placement, op: Operation) {
-  const layer = op.side === "B" ? `${op.layer}_B` : op.layer;
+  const layer = operationLayer(op);
   if (op.kind === "rect") {
     const p1 = opPoint(placement, op.x, op.y, op.side);
     const p2 = opPoint(placement, op.x + op.w, op.y + op.h, op.side);
