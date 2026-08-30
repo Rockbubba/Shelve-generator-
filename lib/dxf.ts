@@ -28,19 +28,69 @@ function layerColor(name: string): number {
 }
 
 /**
- * Volledige laagnaam voor een bewerking. Freesdiepte reist in DXF alleen via
- * de laagconventie mee, dus boringen krijgen een diepte-suffix:
- * `_D15` = 15 mm diep vanaf het vlak, `_DOOR` = doorlopend. Pockets dragen de
- * diepte al in hun naam (DADO_7MM, CABINEO_12MM, RUG_SPONNING = 10 mm).
- * Suffix `_B` = tweede zijde (onderdeel omklappen over de lange zijde).
+ * Bewerking omgerekend naar het "bed-frame": het coördinatenstelsel van het
+ * onderdeel zoals het op het CNC-bed ligt, met de `machineSide` boven.
+ * Planken liggen ondersteboven (spiegelen over de korte zijde); staanders
+ * met alleen B-bewerkingen liggen omgekeerd (lange zijde). Bewerkingen op de
+ * andere zijde komen op `_B`-lagen: het onderdeel wordt daarvoor omgeklapt
+ * over dezelfde as.
+ *
+ * Freesdiepte reist in DXF alleen via de laagconventie mee, dus boringen
+ * krijgen een diepte-suffix: `_D15` = 15 mm diep vanaf het vlak,
+ * `_DOOR` = doorlopend. Pockets dragen de diepte al in hun naam
+ * (DADO_7MM, CABINEO_12MM, RUG_SPONNING = 10 mm).
  */
-export function operationLayer(op: Operation): string {
-  let name: string = op.layer;
-  if (op.kind === "circle") {
-    name += op.through ? "_DOOR" : `_D${String(op.depth).replace(".", "_")}`;
-  }
-  if (op.side === "B") name += "_B";
-  return name;
+export type BedOp =
+  | { kind: "rect"; layer: string; secondary: boolean; x: number; y: number; w: number; h: number }
+  | { kind: "circle"; layer: string; secondary: boolean; cx: number; cy: number; r: number }
+  | { kind: "text"; layer: string; secondary: boolean; x: number; y: number; height: number; text: string };
+
+/** As waarover dit paneel wordt omgeklapt voor de tweede zijde. */
+export function flipAxis(panel: Panel): "kort" | "lang" {
+  return panel.type === "plank" || panel.type === "plint" ? "kort" : "lang";
+}
+
+export function panelOpsInBedFrame(panel: Panel): BedOp[] {
+  const L = panel.length;
+  const W = panel.width;
+  const short = flipAxis(panel) === "kort";
+
+  return panel.ops.map((op) => {
+    const secondary = op.side !== panel.machineSide;
+    // Aantal spiegelingen: één om de B-zijde boven te leggen, plus één
+    // voor bewerkingen op de andere zijde (omklappen). Twee = identiteit.
+    const flips = (panel.machineSide === "B" ? 1 : 0) + (secondary ? 1 : 0);
+    const mirror = flips % 2 === 1;
+
+    let layer: string = op.layer;
+    if (op.kind === "circle") {
+      layer += op.through ? "_DOOR" : `_D${String(op.depth).replace(".", "_")}`;
+    }
+    if (secondary) layer += "_B";
+
+    if (op.kind === "rect") {
+      let { x, y } = op;
+      if (mirror) {
+        if (short) x = L - x - op.w;
+        else y = W - y - op.h;
+      }
+      return { kind: "rect", layer, secondary, x, y, w: op.w, h: op.h };
+    }
+    if (op.kind === "circle") {
+      let { cx, cy } = op;
+      if (mirror) {
+        if (short) cx = L - cx;
+        else cy = W - cy;
+      }
+      return { kind: "circle", layer, secondary, cx, cy, r: op.diameter / 2 };
+    }
+    let { x, y } = op;
+    if (mirror) {
+      if (short) x = L - x;
+      else y = W - y;
+    }
+    return { kind: "text", layer, secondary, x, y, height: op.height, text: op.text };
+  });
 }
 
 class DxfBuilder {
@@ -173,35 +223,20 @@ export function panelContour(panel: Panel): [number, number][] {
   return pts;
 }
 
-function opPoint(
-  placement: Placement,
-  x: number,
-  y: number,
-  side: "A" | "B",
-): [number, number] {
-  const localY = side === "B" ? placement.width - y : y;
-  return [placement.x + x, placement.y + localY];
-}
-
-function emitOperation(dxf: DxfBuilder, placement: Placement, op: Operation) {
-  const layer = operationLayer(op);
+function emitBedOp(dxf: DxfBuilder, placement: Placement, op: BedOp) {
   if (op.kind === "rect") {
-    const p1 = opPoint(placement, op.x, op.y, op.side);
-    const p2 = opPoint(placement, op.x + op.w, op.y + op.h, op.side);
-    const [x0, x1] = [Math.min(p1[0], p2[0]), Math.max(p1[0], p2[0])];
-    const [y0, y1] = [Math.min(p1[1], p2[1]), Math.max(p1[1], p2[1])];
-    dxf.polyline(layer, [
+    const x0 = placement.x + op.x;
+    const y0 = placement.y + op.y;
+    dxf.polyline(op.layer, [
       [x0, y0],
-      [x1, y0],
-      [x1, y1],
-      [x0, y1],
+      [x0 + op.w, y0],
+      [x0 + op.w, y0 + op.h],
+      [x0, y0 + op.h],
     ]);
   } else if (op.kind === "circle") {
-    const [cx, cy] = opPoint(placement, op.cx, op.cy, op.side);
-    dxf.circle(layer, cx, cy, op.diameter / 2);
+    dxf.circle(op.layer, placement.x + op.cx, placement.y + op.cy, op.r);
   } else {
-    const [x, y] = opPoint(placement, op.x, op.y, op.side);
-    dxf.text(layer, x, y, op.height, op.text);
+    dxf.text(op.layer, placement.x + op.x, placement.y + op.y, op.height, op.text);
   }
 }
 
@@ -222,8 +257,8 @@ export function sheetToDxf(sheet: NestedSheet): string {
       ([x, y]) => [placement.x + x, placement.y + y] as [number, number],
     );
     dxf.polyline("CONTOUR", contour);
-    for (const op of placement.panel.ops) {
-      emitOperation(dxf, placement, op);
+    for (const op of panelOpsInBedFrame(placement.panel)) {
+      emitBedOp(dxf, placement, op);
     }
   }
   return dxf.build();

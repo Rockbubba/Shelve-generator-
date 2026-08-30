@@ -86,9 +86,27 @@ Eén DXF (AC1015, mm) per plaat, lagen gescheiden per bewerking:
 DXF is 2D: de freesdiepte reist mee via de laagconventie. Boringen krijgen
 daarom een expliciet diepte-suffix (`_D15` = 15 mm vanaf het vlak,
 `_DOOR` = doorlopend), zodat je in CAM per laag één diepte instelt.
-Bewerkingen aan de tweede zijde (binnenstaanders hebben dado's aan beide
-kanten; plank-onderzijdes) staan gespiegeld op lagen met suffix `_B`:
-het onderdeel wordt daarvoor over de **lange zijde** omgeklapt.
+
+### Éénzijdig frezen
+
+Het ontwerp minimaliseert omklappen op het bed:
+
+- **Planken liggen ondersteboven** in de DXF: deuvelgaten, Cabineo-pockets
+  en gravure zitten allemaal op de onderzijde en worden in één opspanning
+  gefreesd.
+- **Cabineo-boutgaten zijn doorlopend** en worden altijd vanaf één zijde
+  geboord; de randafstanden verschillen per staanderzijde (60 vs 100 mm)
+  zodat bouten van linker- en rechtervak elkaar niet raken. Een
+  Cabineo-kast is daarmee **volledig éénzijdig**.
+- **Rug geschroefd** (default): het HDF-paneel overlapt de achterranden en
+  wordt geschroefd — geen groeven. De optie *sponning* freest wél groeven
+  en vergt dan bewerkingen aan twee zijden.
+- **Blinde dado**: binnenstaanders hebben onvermijdelijk dado's aan beide
+  zijden — dit zijn de enige onderdelen die omgeklapt worden. Die
+  bewerkingen staan gespiegeld op lagen met suffix `_B`: omklappen over de
+  **lange zijde** (staanders) resp. de **korte zijde** (planken, alleen bij
+  rug-in-sponning).
+
 De nesting-preview in de UI tekent alle bewerkingen mee (gestippeld =
 tweede zijde), zodat je vóór het downloaden kunt controleren of dado's en
 boringen op de juiste plek zitten.

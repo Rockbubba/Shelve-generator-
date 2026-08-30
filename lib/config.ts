@@ -22,6 +22,7 @@ export const RUG_GROOVE_WIDTH = 4; // RUG_SPONNING breedte
 export const RUG_GROOVE_DEPTH = 10; // hoe diep de HDF in de groef valt
 export const RUG_GROOVE_BACK_OFFSET = 12; // hart van de groef t.o.v. achterkant paneel
 export const RUG_CLEARANCE = 1; // speling per zijde van het HDF-paneel
+export const RUG_SCREWS_PER_PANEL = 8; // bij geschroefde rug
 
 // ---- Verbindingen -----------------------------------------------------------
 export const DADO_DEPTH = 7; // blinde dado diepte in staander
@@ -33,6 +34,13 @@ export const CABINEO_POCKET_HEIGHT = 15;
 export const CABINEO_POCKET_DEPTH = 12.5;
 export const CABINEO_BOLT_DIAMETER = 5;
 export const CABINEOS_PER_JOINT = 2;
+/**
+ * Afstand van de Cabineo's tot de voor-/achterrand, per staanderzijde
+ * verschillend zodat de doorlopende boutgaten van linker- en rechtervak
+ * elkaar in de staander niet raken en alles vanaf één zijde geboord wordt.
+ */
+export const CABINEO_EDGE_OFFSET_A = 60;
+export const CABINEO_EDGE_OFFSET_B = 100;
 
 // ---- Kast -------------------------------------------------------------------
 export const MAX_MODULE_HEIGHT = 2400;
@@ -55,6 +63,12 @@ export const WIDTH_SNAP_TOLERANCE = 12;
 
 export type Joinery = "dado" | "cabineo";
 export type BaseType = "plint" | "pootjes" | "geen";
+/**
+ * Bevestiging van de HDF-rug: `geschroefd` = op de achterkant geschroefd
+ * (geen groeven, alles éénzijdig te frezen); `sponning` = in een gefreesde
+ * groef (vergt bewerkingen aan twee zijden van planken en staanders).
+ */
+export type RugMount = "geschroefd" | "sponning";
 
 /**
  * Vulling van een vak. v1 gebruikt alleen `open` en `rug`;
@@ -73,6 +87,7 @@ export interface CabinetConfig {
   rows: number;
   joinery: Joinery;
   base: BaseType;
+  rugMount: RugMount;
   /** Gemeten plaatdikte (nominaal 18, bv. 17.8 gemeten). */
   thickness: number;
   /**
@@ -92,6 +107,7 @@ export const DEFAULT_CONFIG: CabinetConfig = {
   rows: 5,
   joinery: "dado",
   base: "plint",
+  rugMount: "geschroefd",
   thickness: 18,
   cellFills: {},
   wallMount: true,

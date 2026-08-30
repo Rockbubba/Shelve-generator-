@@ -9,7 +9,7 @@ import {
   SHEET_WIDTH,
   depthOption,
 } from "../config";
-import { buildCabinetModel, RectOp } from "../model";
+import { buildCabinetModel, CircleOp, RectOp } from "../model";
 import { nestPanels } from "../nesting";
 import { panelContour, sheetToDxf } from "../dxf";
 
@@ -184,8 +184,10 @@ describe("dxf-output (acceptatiecriterium 3)", () => {
     const all = nesting.sheets.map((s) => sheetToDxf(s)).join("\n");
     // Staander: deuvelgat in de dadobodem, 15 mm diep.
     expect(all).toContain("BOOR_8MM_D15");
-    // Plank: blind deuvelgat in het plankvlak (tweede zijde), 10 mm diep.
-    expect(all).toContain("BOOR_8MM_D10_B");
+    // Plank: blind deuvelgat in het plankvlak, 10 mm diep — planken liggen
+    // ondersteboven op het bed, dus dit is een eerste-zijde-laag.
+    expect(all).toContain("BOOR_8MM_D10");
+    expect(all).not.toContain("BOOR_8MM_D10_B");
     // Geen ongesuffixte boorlaag meer: dieptes mogen niet mengen.
     expect(all).not.toMatch(/^BOOR_8MM$/m);
     expect(all).not.toMatch(/^BOOR_8MM_B$/m);
@@ -196,7 +198,7 @@ describe("dxf-output (acceptatiecriterium 3)", () => {
     const cabNesting = nestPanels(cab.panels, ACCEPT.depth);
     const all = cabNesting.sheets.map((s) => sheetToDxf(s)).join("\n");
     expect(all).toContain("BOOR_5MM_DOOR");
-    expect(all).toContain("CABINEO_12MM_B");
+    expect(all).toContain("CABINEO_12MM");
   });
 
   it("plankcontour heeft 8 punten (2 hoekinkepingen)", () => {
@@ -215,6 +217,56 @@ describe("dxf-output (acceptatiecriterium 3)", () => {
   it("staandercontour is een rechthoek", () => {
     const staander = model.panels.find((p) => p.type === "staander")!;
     expect(panelContour(staander)).toHaveLength(4);
+  });
+});
+
+describe("éénzijdig frezen", () => {
+  it("planken hebben alle bewerkingen op de onderzijde (geen omklappen)", () => {
+    const model = buildCabinetModel(ACCEPT); // default: rug geschroefd
+    for (const p of model.panels.filter((x) => x.type === "plank")) {
+      expect(p.machineSide).toBe("B");
+      expect(p.ops.every((op) => op.side === "B")).toBe(true);
+    }
+  });
+
+  it("cabineo-kast is volledig éénzijdig", () => {
+    const cab = buildCabinetModel({ ...ACCEPT, joinery: "cabineo" });
+    const cabNesting = nestPanels(cab.panels, ACCEPT.depth);
+    const all = cabNesting.sheets.map((s) => sheetToDxf(s)).join("\n");
+    expect(all).not.toMatch(/_B$/m);
+    // Boutgaten van linker- en rechtervak raken elkaar niet: verschillende
+    // randafstanden per staanderzijde.
+    const inner = cab.panels.find((p) => p.id === "S2")!;
+    const edges = new Set(
+      inner.ops
+        .filter((op): op is CircleOp => op.kind === "circle")
+        .map((op) => Math.min(op.cy, ACCEPT.depth - op.cy).toFixed(0)),
+    );
+    expect(edges.size).toBe(2);
+  });
+
+  it("alleen binnenstaanders met blinde dado's vergen een tweede zijde", () => {
+    const model = buildCabinetModel(ACCEPT);
+    for (const p of model.panels) {
+      const twoSided = p.ops.some((op) => op.side !== p.machineSide);
+      if (twoSided) {
+        expect(p.type).toBe("staander");
+        expect(["S1", `S${ACCEPT.columns + 1}`]).not.toContain(p.id);
+      }
+    }
+  });
+
+  it("rug in sponning geeft groeven, geschroefd geeft schroeven", () => {
+    const spon = buildCabinetModel({ ...ACCEPT, rugMount: "sponning" });
+    const schroef = buildCabinetModel({ ...ACCEPT, rugMount: "geschroefd" });
+    expect(
+      spon.panels.some((p) => p.ops.some((o) => o.layer === "RUG_SPONNING")),
+    ).toBe(true);
+    expect(
+      schroef.panels.some((p) => p.ops.some((o) => o.layer === "RUG_SPONNING")),
+    ).toBe(false);
+    expect(schroef.hardware.some((h) => h.name.includes("Spaanplaatschroef"))).toBe(true);
+    expect(spon.hardware.some((h) => h.name.includes("Spaanplaatschroef"))).toBe(false);
   });
 });
 

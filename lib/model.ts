@@ -19,6 +19,8 @@ import {
   DADO_FRONT_STOP,
   DOWEL_DIAMETER,
   CABINEO_BOLT_DIAMETER,
+  CABINEO_EDGE_OFFSET_A,
+  CABINEO_EDGE_OFFSET_B,
   CABINEO_POCKET_DEPTH,
   CABINEO_POCKET_HEIGHT,
   CABINEO_POCKET_WIDTH,
@@ -35,6 +37,7 @@ import {
   RUG_GROOVE_BACK_OFFSET,
   RUG_GROOVE_DEPTH,
   RUG_GROOVE_WIDTH,
+  RUG_SCREWS_PER_PANEL,
   TOOL_RADIUS,
   USABLE_LENGTH,
   WALL_BRACKET_MANDATORY_HEIGHT,
@@ -113,6 +116,13 @@ export interface Panel {
   ops: Operation[];
   /** Al het niet-rechthoekige contourwerk (hoekinkepingen bij dado's). */
   notches: { x: number; y: number; w: number; h: number }[];
+  /**
+   * De zijde die boven op het CNC-bed ligt. Planken liggen ondersteboven
+   * ("B"), zodat deuvelgaten/Cabineo-pockets zonder omklappen gefreesd
+   * worden. Bewerkingen op de andere zijde komen op `_B`-lagen: omklappen
+   * over de korte zijde (planken/plint) of de lange zijde (staanders).
+   */
+  machineSide: Side;
   place: Placement3D;
   module: number;
 }
@@ -356,13 +366,17 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
             });
             dowelJoints++;
           } else {
-            // Cabineo: doorlopende boutgaten Ø5 in het staandervlak.
+            // Cabineo: doorlopende boutgaten Ø5 — altijd vanaf zijde A
+            // geboord (door-en-door), met per aansluitzijde een andere
+            // randafstand zodat bouten van beide vakken elkaar niet raken.
+            const edge =
+              side === "A" ? CABINEO_EDGE_OFFSET_A : CABINEO_EDGE_OFFSET_B;
             for (let k = 0; k < CABINEOS_PER_JOINT; k++) {
-              const cy = k === 0 ? 60 : D - 60;
+              const cy = k === 0 ? edge : D - edge;
               ops.push({
                 kind: "circle",
                 layer: "BOOR_5MM",
-                side,
+                side: "A",
                 cx: levelY[j] + t / 2,
                 cy,
                 diameter: CABINEO_BOLT_DIAMETER,
@@ -374,25 +388,31 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
           }
         }
 
-        // RUG_SPONNING: verticale groef per rug-vak aan deze zijde.
-        const colOfSide = side === "A" ? i : i - 1;
-        for (let r = 0; r < rows; r++) {
-          if (cellFillFor(config, m, colOfSide, r) !== "rug") continue;
-          const cellBottom = levelY[r] + t;
-          ops.push({
-            kind: "rect",
-            layer: "RUG_SPONNING",
-            side,
-            x: cellBottom - RUG_GROOVE_DEPTH,
-            y: RUG_GROOVE_BACK_OFFSET - RUG_GROOVE_WIDTH / 2,
-            w: cellH + 2 * RUG_GROOVE_DEPTH,
-            h: RUG_GROOVE_WIDTH,
-            depth: RUG_GROOVE_DEPTH,
-          });
+        // RUG_SPONNING: verticale groef per rug-vak aan deze zijde
+        // (alleen bij rug-in-sponning; geschroefde rug heeft geen groeven).
+        if (config.rugMount === "sponning") {
+          const colOfSide = side === "A" ? i : i - 1;
+          for (let r = 0; r < rows; r++) {
+            if (cellFillFor(config, m, colOfSide, r) !== "rug") continue;
+            const cellBottom = levelY[r] + t;
+            ops.push({
+              kind: "rect",
+              layer: "RUG_SPONNING",
+              side,
+              x: cellBottom - RUG_GROOVE_DEPTH,
+              y: RUG_GROOVE_BACK_OFFSET - RUG_GROOVE_WIDTH / 2,
+              w: cellH + 2 * RUG_GROOVE_DEPTH,
+              h: RUG_GROOVE_WIDTH,
+              depth: RUG_GROOVE_DEPTH,
+            });
+          }
         }
       }
 
-      ops.push(engrave(id, Hm, D));
+      // Beddezijde: de zijde waar de bewerkingen zitten; alleen
+      // binnenstaanders met blinde dado's hebben onvermijdelijk twee zijden.
+      const machineSide: Side = ops.some((o) => o.side === "A") ? "A" : "B";
+      ops.push(engrave(id, Hm, D, machineSide));
 
       panels.push({
         id,
@@ -403,6 +423,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
         thickness: t,
         ops,
         notches: [],
+        machineSide,
         place: {
           x: i * (cellW + t),
           y: moduleBase,
@@ -449,9 +470,12 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
           }
         } else {
           // Cabineo-pockets in het plankvlak (onderzijde, tegen elk uiteinde).
+          // Linkeruiteinde sluit aan op de A-zijde van een staander,
+          // rechteruiteinde op de B-zijde: randafstanden volgen die zijden.
           for (const end of [0, 1]) {
+            const edge = end === 0 ? CABINEO_EDGE_OFFSET_A : CABINEO_EDGE_OFFSET_B;
             for (let k = 0; k < CABINEOS_PER_JOINT; k++) {
-              const cy = k === 0 ? 60 : D - 60;
+              const cy = k === 0 ? edge : D - edge;
               const x0 = end === 0 ? 0 : shelfLen - CABINEO_POCKET_HEIGHT;
               ops.push({
                 kind: "rect",
@@ -467,28 +491,31 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
           }
         }
 
-        // RUG_SPONNING in de plank: bovenvlak voor het vak erboven,
-        // ondervlak voor het vak eronder.
-        const rugAbove = j < rows && cellFillFor(config, m, c, j) === "rug";
-        const rugBelow = j > 0 && cellFillFor(config, m, c, j - 1) === "rug";
-        for (const [has, side] of [
-          [rugAbove, "A"],
-          [rugBelow, "B"],
-        ] as [boolean, Side][]) {
-          if (!has) continue;
-          ops.push({
-            kind: "rect",
-            layer: "RUG_SPONNING",
-            side,
-            x: 0,
-            y: RUG_GROOVE_BACK_OFFSET - RUG_GROOVE_WIDTH / 2,
-            w: shelfLen,
-            h: RUG_GROOVE_WIDTH,
-            depth: RUG_GROOVE_DEPTH,
-          });
+        // RUG_SPONNING in de plank (alleen bij rug-in-sponning):
+        // bovenvlak voor het vak erboven, ondervlak voor het vak eronder.
+        if (config.rugMount === "sponning") {
+          const rugAbove = j < rows && cellFillFor(config, m, c, j) === "rug";
+          const rugBelow = j > 0 && cellFillFor(config, m, c, j - 1) === "rug";
+          for (const [has, side] of [
+            [rugAbove, "A"],
+            [rugBelow, "B"],
+          ] as [boolean, Side][]) {
+            if (!has) continue;
+            ops.push({
+              kind: "rect",
+              layer: "RUG_SPONNING",
+              side,
+              x: 0,
+              y: RUG_GROOVE_BACK_OFFSET - RUG_GROOVE_WIDTH / 2,
+              w: shelfLen,
+              h: RUG_GROOVE_WIDTH,
+              depth: RUG_GROOVE_DEPTH,
+            });
+          }
         }
 
-        ops.push(engrave(id, shelfLen, D));
+        // Planken liggen ondersteboven op het bed: gravure mee op zijde B.
+        ops.push(engrave(id, shelfLen, D, "B"));
 
         panels.push({
           id,
@@ -499,6 +526,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
           thickness: t,
           ops,
           notches,
+          machineSide: "B",
           place: {
             x: c * (cellW + t) + t - dadoInset,
             y: moduleBase + levelY[j],
@@ -513,13 +541,20 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
     }
 
     // ---- Rugpanelen (HDF) ---------------------------------------------------
+    // Geschroefd: paneel overlapt de achterranden van staanders en planken
+    // (halve plaatdikte rondom) en wordt geschroefd — geen groeven nodig.
+    // Sponning: paneel valt in de gefreesde groef.
+    const sponning = config.rugMount === "sponning";
+    const rugOversize = sponning
+      ? RUG_GROOVE_DEPTH - RUG_CLEARANCE
+      : t / 2;
     for (let c = 0; c < columns; c++) {
       for (let r = 0; r < rows; r++) {
         if (cellFillFor(config, m, c, r) !== "rug") continue;
         rugNo++;
         const id = `R${rugNo}`;
-        const rw = round1(cellW + 2 * (RUG_GROOVE_DEPTH - RUG_CLEARANCE));
-        const rh = round1(cellH + 2 * (RUG_GROOVE_DEPTH - RUG_CLEARANCE));
+        const rw = round1(cellW + 2 * rugOversize);
+        const rh = round1(cellH + 2 * rugOversize);
         panels.push({
           id,
           type: "rug",
@@ -527,12 +562,15 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
           length: Math.max(rw, rh),
           width: Math.min(rw, rh),
           thickness: HDF_THICKNESS,
-          ops: [engrave(id, Math.max(rw, rh), Math.min(rw, rh))],
+          ops: [engrave(id, Math.max(rw, rh), Math.min(rw, rh), "A")],
           notches: [],
+          machineSide: "A",
           place: {
-            x: c * (cellW + t) + t - (RUG_GROOVE_DEPTH - RUG_CLEARANCE),
-            y: moduleBase + levelY[r] + t - (RUG_GROOVE_DEPTH - RUG_CLEARANCE),
-            z: RUG_GROOVE_BACK_OFFSET - HDF_THICKNESS / 2,
+            x: c * (cellW + t) + t - rugOversize,
+            y: moduleBase + levelY[r] + t - rugOversize,
+            z: sponning
+              ? RUG_GROOVE_BACK_OFFSET - HDF_THICKNESS / 2
+              : -HDF_THICKNESS,
             w: rw,
             h: rh,
             d: HDF_THICKNESS,
@@ -555,8 +593,9 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
       length: plintLen,
       width: PLINTH_HEIGHT,
       thickness: t,
-      ops: [engrave("PL1", plintLen, PLINTH_HEIGHT)],
+      ops: [engrave("PL1", plintLen, PLINTH_HEIGHT, "A")],
       notches: [],
+      machineSide: "A",
       place: {
         x: t + 1,
         y: 0,
@@ -583,6 +622,13 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
   }
   if (rugCellCount > 0) {
     hardware.push({ name: "HDF rugpaneel 4 mm (gefreesd)", qty: rugCellCount, unit: "stuks" });
+    if (config.rugMount === "geschroefd") {
+      hardware.push({
+        name: "Spaanplaatschroef 3,5 × 16 mm (rug)",
+        qty: rugCellCount * RUG_SCREWS_PER_PANEL,
+        unit: "stuks",
+      });
+    }
   }
   hardware.push({ name: "L-beugel muurbevestiging", qty: 2, unit: "stuks" });
   if (config.base === "pootjes") {
@@ -632,11 +678,11 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
   };
 }
 
-function engrave(id: string, length: number, width: number): TextOp {
+function engrave(id: string, length: number, width: number, side: Side): TextOp {
   return {
     kind: "text",
     layer: "GRAVURE",
-    side: "A",
+    side,
     x: length / 2,
     y: width / 2,
     text: id,

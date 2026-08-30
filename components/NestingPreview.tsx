@@ -2,11 +2,10 @@
 
 import { formatMm } from "@/lib/config";
 import { NestedSheet, NestingResult, Placement } from "@/lib/nesting";
-import { panelContour } from "@/lib/dxf";
-import { Operation } from "@/lib/model";
+import { panelContour, panelOpsInBedFrame } from "@/lib/dxf";
 
 /** Kleur per bewerkingstype, gelijk aan de DXF-laagkleuren. */
-function opColor(layer: Operation["layer"]): string {
+function opColor(layer: string): string {
   if (layer.startsWith("DADO")) return "#dc2626";
   if (layer.startsWith("BOOR")) return "#2563eb";
   if (layer.startsWith("CABINEO")) return "#9333ea";
@@ -15,24 +14,23 @@ function opColor(layer: Operation["layer"]): string {
 }
 
 /**
- * Bewerkingen van één geplaatst onderdeel, in plaatcoördinaten en gespiegeld
- * voor SVG (y omlaag). Side-B-bewerkingen (tweede zijde) zijn gestippeld.
+ * Bewerkingen van één geplaatst onderdeel, in dezelfde bed-frame-coördinaten
+ * als de DXF (planken liggen ondersteboven), gespiegeld voor SVG (y omlaag).
+ * Tweede-zijde-bewerkingen (omklappen) zijn gestippeld.
  */
 function PlacementOps({ pl, sheetW }: { pl: Placement; sheetW: number }) {
   return (
     <>
-      {pl.panel.ops.map((op, i) => {
+      {panelOpsInBedFrame(pl.panel).map((op, i) => {
         if (op.kind === "text") return null;
-        const dash = op.side === "B" ? "14 10" : undefined;
+        const dash = op.secondary ? "14 10" : undefined;
         const color = opColor(op.layer);
         if (op.kind === "rect") {
-          const yLow =
-            op.side === "B" ? pl.width - op.y - op.h : op.y;
           return (
             <rect
               key={i}
               x={pl.x + op.x}
-              y={sheetW - (pl.y + yLow + op.h)}
+              y={sheetW - (pl.y + op.y + op.h)}
               width={op.w}
               height={op.h}
               fill={color}
@@ -43,13 +41,12 @@ function PlacementOps({ pl, sheetW }: { pl: Placement; sheetW: number }) {
             />
           );
         }
-        const cy = op.side === "B" ? pl.width - op.cy : op.cy;
         return (
           <circle
             key={i}
             cx={pl.x + op.cx}
-            cy={sheetW - (pl.y + cy)}
-            r={Math.max(op.diameter / 2, 9)}
+            cy={sheetW - (pl.y + op.cy)}
+            r={Math.max(op.r, 9)}
             fill="none"
             stroke={color}
             strokeWidth={3}
@@ -121,7 +118,7 @@ function Legend() {
         <svg width="18" height="6" aria-hidden>
           <line x1="0" y1="3" x2="18" y2="3" stroke="#666" strokeWidth="2" strokeDasharray="4 3" />
         </svg>
-        tweede zijde
+        tweede zijde (omklappen)
       </span>
     </div>
   );

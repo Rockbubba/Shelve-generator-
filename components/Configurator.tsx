@@ -164,11 +164,36 @@ export default function Configurator() {
           <Segmented
             label="Verbindingstype"
             options={[
-              { value: "dado", label: "Blinde dado", sub: "+ deuvel, gelijmd" },
-              { value: "cabineo", label: "Cabineo", sub: "demontabel" },
+              {
+                value: "dado",
+                label: "Blinde dado",
+                sub: "gelijmd · binnenstaanders 2-zijdig",
+              },
+              {
+                value: "cabineo",
+                label: "Cabineo",
+                sub: "demontabel · alles 1-zijdig",
+              },
             ]}
             value={config.joinery}
             onChange={(joinery) => update({ joinery })}
+          />
+          <Segmented
+            label="Rugbevestiging"
+            options={[
+              {
+                value: "geschroefd",
+                label: "Geschroefd",
+                sub: "op achterkant · 1-zijdig",
+              },
+              {
+                value: "sponning",
+                label: "Sponning",
+                sub: "in groef · 2-zijdig",
+              },
+            ]}
+            value={config.rugMount}
+            onChange={(rugMount) => update({ rugMount })}
           />
           <Segmented
             label="Onderkant"
