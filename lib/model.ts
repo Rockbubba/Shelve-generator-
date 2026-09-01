@@ -366,9 +366,13 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
             });
             dowelJoints++;
           } else {
-            // Cabineo: doorlopende boutgaten Ø5 — altijd vanaf zijde A
-            // geboord (door-en-door), met per aansluitzijde een andere
+            // Cabineo-boutgaten Ø5, met per aansluitzijde een andere
             // randafstand zodat bouten van beide vakken elkaar niet raken.
+            // Binnenstaanders: doorlopend vanaf zijde A (de uitgang wordt
+            // afgedekt door de plank aan de andere kant). Buitenstaanders:
+            // blind vanaf de binnenzijde, anders zit er een zichtbaar gat
+            // in de buitenwang — dat is meteen hun enige bewerkingszijde.
+            const isOuter = i === 0 || i === columns;
             const edge =
               side === "A" ? CABINEO_EDGE_OFFSET_A : CABINEO_EDGE_OFFSET_B;
             for (let k = 0; k < CABINEOS_PER_JOINT; k++) {
@@ -376,12 +380,12 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
               ops.push({
                 kind: "circle",
                 layer: "BOOR_5MM",
-                side: "A",
+                side: isOuter ? side : "A",
                 cx: levelY[j] + t / 2,
                 cy,
                 diameter: CABINEO_BOLT_DIAMETER,
-                depth: t,
-                through: true,
+                depth: isOuter ? 15 : t,
+                through: !isOuter,
               });
             }
             cabineoJoints++;

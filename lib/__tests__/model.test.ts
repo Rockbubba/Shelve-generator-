@@ -193,12 +193,31 @@ describe("dxf-output (acceptatiecriterium 3)", () => {
     expect(all).not.toMatch(/^BOOR_8MM_B$/m);
   });
 
-  it("cabineo-boutgaten staan op een doorloop-laag", () => {
+  it("cabineo-boutgaten: binnenstaanders doorlopend, buitenstaanders blind", () => {
     const cab = buildCabinetModel({ ...ACCEPT, joinery: "cabineo" });
     const cabNesting = nestPanels(cab.panels, ACCEPT.depth);
     const all = cabNesting.sheets.map((s) => sheetToDxf(s)).join("\n");
     expect(all).toContain("BOOR_5MM_DOOR");
+    expect(all).toContain("BOOR_5MM_D15");
     expect(all).toContain("CABINEO_12MM");
+
+    // Geen doorlopend gat in een buitenwang (zichtbaar van buiten).
+    const outerIds = ["S1", `S${ACCEPT.columns + 1}`];
+    for (const id of outerIds) {
+      const outer = cab.panels.find((p) => p.id === id)!;
+      const holes = outer.ops.filter(
+        (op): op is CircleOp => op.kind === "circle",
+      );
+      expect(holes.length).toBeGreaterThan(0);
+      expect(holes.every((h) => !h.through)).toBe(true);
+    }
+    // Binnenstaander: wél doorlopend (uitgang afgedekt door de plank).
+    const inner = cab.panels.find((p) => p.id === "S2")!;
+    expect(
+      inner.ops
+        .filter((op): op is CircleOp => op.kind === "circle")
+        .every((h) => h.through),
+    ).toBe(true);
   });
 
   it("plankcontour heeft 8 punten (2 hoekinkepingen)", () => {

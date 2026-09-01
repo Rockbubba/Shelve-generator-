@@ -94,10 +94,12 @@ Het ontwerp minimaliseert omklappen op het bed:
 - **Planken liggen ondersteboven** in de DXF: deuvelgaten, Cabineo-pockets
   en gravure zitten allemaal op de onderzijde en worden in één opspanning
   gefreesd.
-- **Cabineo-boutgaten zijn doorlopend** en worden altijd vanaf één zijde
-  geboord; de randafstanden verschillen per staanderzijde (60 vs 100 mm)
-  zodat bouten van linker- en rechtervak elkaar niet raken. Een
-  Cabineo-kast is daarmee **volledig éénzijdig**.
+- **Cabineo-boutgaten**: in binnenstaanders doorlopend vanaf één zijde
+  (de uitgang wordt afgedekt door de plank aan de andere kant); in
+  buitenstaanders blind (Ø5 × 15 mm) vanaf de binnenzijde, zodat de
+  buitenwang gaaf blijft. De randafstanden verschillen per staanderzijde
+  (60 vs 100 mm) zodat bouten van linker- en rechtervak elkaar niet
+  raken. Een Cabineo-kast is daarmee **volledig éénzijdig**.
 - **Rug geschroefd** (default): het HDF-paneel overlapt de achterranden en
   wordt geschroefd — geen groeven. De optie *sponning* freest wél groeven
   en vergt dan bewerkingen aan twee zijden.
