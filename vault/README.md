@@ -58,7 +58,8 @@ installs itself on first use.
    Import the file from `Vault.lean`.
 2. Add a ledger entry with `kind: "lemma"`, `status: "open"`, the full
    declaration name in `lean_decl`, the file in `lean_file`, who proposed it,
-   and which target it feeds via `depends_on`.
+   its prerequisites in `depends_on` (other ledger ids it uses), and the
+   target it serves in `toward`.
 3. Run `scripts/check.sh`. It must pass with the entry reported `open`.
 4. When a proof lands, run `scripts/check.sh --sync`. The entry flips to
    `verified` only if Lean agrees, and `verified_at` is stamped.
@@ -76,6 +77,12 @@ Only the Riemann Hypothesis has a formal statement, because Mathlib already
 defines `RiemannHypothesis`. The other five open problems, and the Poincare
 dry run, are `unformalized`: their first lemma is stating them. See the
 `notes` field of each ledger entry for what Mathlib is missing.
+
+Two stage-two lemmas sit under the Riemann target in
+`Vault/Lemmas/ZetaCriticalStrip.lean`: zeta has only trivial zeros for
+`re s ≤ 0`, and every nontrivial zero lies in the open critical strip.
+Classical results, absent from Mathlib, with a proof sketch in the ledger
+notes. They are the first real jobs for the crew after the stage-one lemma.
 
 ## What this is not
 

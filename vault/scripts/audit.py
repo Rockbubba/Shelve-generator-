@@ -75,6 +75,9 @@ def check_schema(ledger: dict) -> list[str]:
                 problems.append(f"{eid}: depends_on unknown id {dep!r}")
             elif dep == eid:
                 problems.append(f"{eid}: depends on itself")
+        toward = e.get("toward")
+        if toward is not None and toward not in known:
+            problems.append(f"{eid}: toward unknown id {toward!r}")
     return problems
 
 

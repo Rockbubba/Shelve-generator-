@@ -56,6 +56,40 @@
       ]
     },
     {
+      "id": "lemma.riemann.no_zeros_re_le_zero",
+      "kind": "lemma",
+      "title": "Zeta has only trivial zeros for Re s <= 0",
+      "status": "open",
+      "lean_decl": "Vault.Lemmas.riemannZeta_ne_zero_of_re_le_zero",
+      "lean_file": "Vault/Lemmas/ZetaCriticalStrip.lean",
+      "statement": "If Re s <= 0 and s is not -2(n+1) for any natural n, then zeta(s) != 0.",
+      "proposed_by": "vault (stage-two target)",
+      "attacked_by": [],
+      "depends_on": [],
+      "toward": "target.riemann",
+      "notes": "Classical, not in Mathlib as of v4.33.1. Sketch: apply `riemannZeta_one_sub` at 1 - s (hypotheses hold since Re(1 - s) >= 1, so 1 - s is never -n and never 1 unless s = 0, where `riemannZeta_zero` gives -1/2). Then zeta(s) = 2 (2 pi)^(-(1-s)) Gamma(1-s) cos(pi (1-s)/2) zeta(1-s). Each factor is nonzero: `riemannZeta_ne_zero_of_one_le_re` for zeta(1-s), `Complex.Gamma_ne_zero` since 1 - s is not a non-positive integer, `Complex.cos_eq_zero_iff` shows the cosine vanishes only when s is an even integer <= 0, which the hypothesis excludes (s = 0 handled separately).",
+      "references": [
+        "Titchmarsh, The Theory of the Riemann Zeta-Function, ch. 2"
+      ]
+    },
+    {
+      "id": "lemma.riemann.critical_strip",
+      "kind": "lemma",
+      "title": "Nontrivial zeros lie in the open critical strip",
+      "status": "open",
+      "lean_decl": "Vault.Lemmas.re_mem_Ioo_of_riemannZeta_eq_zero",
+      "lean_file": "Vault/Lemmas/ZetaCriticalStrip.lean",
+      "statement": "If zeta(s) = 0 and s is not a trivial zero, then 0 < Re s < 1.",
+      "proposed_by": "vault (stage-two target)",
+      "attacked_by": [],
+      "depends_on": [
+        "lemma.riemann.no_zeros_re_le_zero"
+      ],
+      "toward": "target.riemann",
+      "notes": "Corollary: `riemannZeta_ne_zero_of_one_le_re` rules out Re s >= 1, the previous lemma rules out Re s <= 0.",
+      "references": []
+    },
+    {
       "id": "target.p_vs_np",
       "kind": "target",
       "title": "P versus NP",
