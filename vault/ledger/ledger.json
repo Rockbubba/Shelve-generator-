@@ -26,6 +26,20 @@
       ]
     },
     {
+      "id": "practice.stage1_sum_first_odd",
+      "kind": "practice",
+      "title": "Sum of the first n odd numbers",
+      "status": "open",
+      "lean_decl": "Vault.Practice.sum_first_odd",
+      "lean_file": "Vault/Practice/Stage1.lean",
+      "statement": "For every natural number n, the sum over i < n of (2i + 1) equals n^2.",
+      "proposed_by": "vault (stage-one practice target)",
+      "attacked_by": [],
+      "depends_on": [],
+      "notes": "Shipped open on purpose. First job for the crew runner: provable from Mathlib by induction in a few lines. Close it with `crew/run.py practice.stage1_sum_first_odd`.",
+      "references": []
+    },
+    {
       "id": "target.riemann",
       "kind": "target",
       "title": "Riemann Hypothesis",

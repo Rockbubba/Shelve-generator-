@@ -16,6 +16,9 @@ vault/
     Practice/           closed results used to exercise the pipeline
     Targets/            formal statements of the open problems, proofs are `sorry`
   ledger/ledger.json    the blueprint on the wall: every claim and its status
+  ledger/attempts/      one directory per entry: every proposal the crew made
+  crew/run.py           the crew: generate, critique, verify loop (see crew/README.md)
+  crew/test_crew.sh     regression test for the loop, no API keys needed
   scripts/check.sh      the door: build + audit, exit 0 or nothing changes hands
   scripts/audit.py      compares every ledger status against `#print axioms`
 ```
@@ -59,6 +62,13 @@ installs itself on first use.
 3. Run `scripts/check.sh`. It must pass with the entry reported `open`.
 4. When a proof lands, run `scripts/check.sh --sync`. The entry flips to
    `verified` only if Lean agrees, and `verified_at` is stamped.
+
+## The crew
+
+`crew/run.py` drives models at an `open` entry through the door. See
+`crew/README.md`. The stage-one practice target
+`practice.stage1_sum_first_odd` ships `open` on purpose: closing it is the
+first job, and `crew/test_crew.sh` proves the loop can.
 
 ## Current targets
 
