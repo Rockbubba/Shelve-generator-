@@ -2,6 +2,7 @@ name: vault
 
 on:
   push:
+    branches: [main]
     paths: ["vault/**", ".github/workflows/vault.yml"]
   pull_request:
     paths: ["vault/**", ".github/workflows/vault.yml"]
