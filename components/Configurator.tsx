@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CABINET_COLORS,
   CabinetConfig,
+  CellFill,
   DEFAULT_CONFIG,
   MAX_PLINTH_SETBACK,
   PLINTH_HEIGHT,
@@ -138,7 +139,18 @@ export default function Configurator() {
     setConfig((c) => {
       const [m, col, row] = cellKey.split(":").map(Number);
       const current = cellFillFor(c, m, col, row);
-      const next = current === "rug" ? "open" : "rug";
+      // Cyclus: open → rug → dichtvak (deur + rug) → open. Bij een volledig
+      // dichte achterwand is "open" gelijk aan rug, dus dan rug ↔ deur.
+      const next: CellFill =
+        c.rugMode === "volledig"
+          ? current === "deur"
+            ? "rug"
+            : "deur"
+          : current === "open"
+            ? "rug"
+            : current === "rug"
+              ? "deur"
+              : "open";
       return { ...c, cellFills: { ...c.cellFills, [cellKey]: next } };
     });
   }, []);
@@ -807,6 +819,40 @@ export default function Configurator() {
               update({ thickness: Math.round(thickness * 10) / 10 })
             }
           />
+          <div className="rounded-xl bg-neutral-50 p-3">
+            <Toggle
+              label="LED-verlichting"
+              hint="strip achter-boven in elk vak"
+              checked={config.led.enabled}
+              onChange={(enabled) => update({ led: { ...config.led, enabled } })}
+            />
+            {config.led.enabled && (
+              <>
+                <Segmented
+                  label="Kabeldoorvoer"
+                  options={[
+                    { value: "links", label: "Links", sub: "achter in elk vak" },
+                    { value: "rechts", label: "Rechts", sub: "achter in elk vak" },
+                  ]}
+                  value={config.led.side}
+                  onChange={(side) => update({ led: { ...config.led, side } })}
+                />
+                <Segmented
+                  label="Montage"
+                  options={[
+                    { value: "inbouw", label: "Inbouw", sub: "groef 17 × 7 mm" },
+                    { value: "opbouw", label: "Opbouw", sub: "geen groef" },
+                  ]}
+                  value={config.led.inbouw ? "inbouw" : "opbouw"}
+                  onChange={(v) => update({ led: { ...config.led, inbouw: v === "inbouw" } })}
+                />
+                <p className="mt-1 text-xs text-neutral-500">
+                  Ø10-doorvoer achter-{config.led.side} in elke plank; de kabels lopen per
+                  kolom omlaag naar de plint, waar de 24 V-driver komt.
+                </p>
+              </>
+            )}
+          </div>
           <Toggle
             label="Muurbevestiging"
             hint="2 L-beugels bovenin (verplicht boven 1500 mm)"
@@ -817,8 +863,13 @@ export default function Configurator() {
             <p className="font-medium text-neutral-800">Rugpanelen</p>
             <p className="mt-1">
               {config.rugMode === "volledig"
-                ? "De hele achterzijde wordt dicht gezet met 4 mm HDF, opgedeeld in stukken die op de plaat passen; de naden vallen achter staanders."
-                : "Tik op een vak in de 3D-weergave om een rugpaneel (4 mm HDF) toe te voegen of te verwijderen. De generator stelt hoekvakken en de onderste rij voor als minimale set tegen schranken."}
+                ? "De hele achterzijde wordt dicht gezet met 4 mm HDF, opgedeeld in stukken die op de plaat passen; de naden vallen achter staanders. Tik op een vak om er een dichtvak (deur) van te maken."
+                : "Tik op een vak in de 3D-weergave: open → rugpaneel (4 mm HDF) → dichtvak (inliggende deur op potscharnieren + rug) → open. De generator stelt hoekvakken en de onderste rij voor als minimale set tegen schranken."}
+            </p>
+            <p className="mt-1">
+              Dichtvakken: deur 2 mm rondom inliggend, Ø35-cups aan de binnenzijde,
+              montageplaten op 37 mm van de voorkant (systeem 32); scharnieren aan de
+              buitenkant van de kast, push-to-open zonder greep.
             </p>
             <button
               type="button"

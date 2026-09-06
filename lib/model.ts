@@ -49,6 +49,25 @@ import {
   RUG_GROOVE_DEPTH,
   RUG_GROOVE_WIDTH,
   RUG_SCREWS_PER_PANEL,
+  LED_GROOVE_WIDTH,
+  LED_GROOVE_DEPTH,
+  LED_GROOVE_BACK_OFFSET,
+  LED_GROOVE_END_MARGIN,
+  LED_CABLE_HOLE_DIAMETER,
+  LED_CABLE_BACK_OFFSET,
+  LED_CABLE_SIDE_OFFSET,
+  LED_WATT_PER_M,
+  LED_DRIVER_WATT,
+  DOOR_GAP,
+  HINGE_CUP_DIAMETER,
+  HINGE_CUP_DEPTH,
+  HINGE_CUP_EDGE,
+  HINGE_END_OFFSET,
+  HINGE_PLATE_FRONT,
+  HINGE_PLATE_SCREW_SPACING,
+  HINGE_PLATE_SCREW_DIAMETER,
+  HINGE_PLATE_SCREW_DEPTH,
+  DOOR_MAX_WIDTH,
   TOOL_RADIUS,
   USABLE_LENGTH,
   WALL_BRACKET_MANDATORY_HEIGHT,
@@ -67,6 +86,9 @@ export type Layer =
   | "BOOR_15MM"
   | "CABINEO_11MM"
   | "RUG_SPONNING"
+  | "LED_GROEF_7MM"
+  | "BOOR_10MM"
+  | "BOOR_35MM"
   | "GRAVURE";
 
 export type Side = "A" | "B";
@@ -116,7 +138,12 @@ export interface PathOp {
 
 export type Operation = RectOp | CircleOp | TextOp | PathOp;
 
-export type PanelType = "staander" | "plank" | "plint" | "rug";
+export type PanelType = "staander" | "plank" | "plint" | "rug" | "deur";
+
+/** Heeft een vak met deze vulling een rugpaneel? (dichtvak = deur + rug) */
+export function fillHasRug(fill: CellFill): boolean {
+  return fill === "rug" || fill === "deur";
+}
 export type Material = "plaat18" | "hdf4";
 
 export interface Placement3D {
@@ -172,6 +199,8 @@ export interface CellInfo {
   /** Aantal rijen dat dit vak beslaat (>1 als er planken zijn weggelaten). */
   rowSpan: number;
   fill: CellFill;
+  /** LED-strip achter-boven in dit vak (render). */
+  led: boolean;
   /** Binnenmaat van het vak in kastcoördinaten. */
   x: number;
   y: number;
@@ -493,6 +522,11 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
   let staanderNo = 0;
   let plankNo = 0;
   let rugNo = 0;
+  let doorNo = 0;
+  let hingeCount = 0;
+  let wideDoorWarned = false;
+  /** Totale LED-striplengte (mm) over alle vakken. */
+  let ledStripMm = 0;
   let dowelJoints = 0;
   let cabineoJoints = 0;
   let rugCellCount = 0;
@@ -562,8 +596,9 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
       for (let k = 0; k < lv.length - 1; k++) {
         const j0 = lv[k];
         const j1 = lv[k + 1];
-        const fill: CellFill = fullBack ? "rug" : cellFillFor(config, m, c, j0);
-        if (fill === "rug") rugCellCount++;
+        const chosen = cellFillFor(config, m, c, j0);
+        const fill: CellFill = fullBack && chosen !== "deur" ? "rug" : chosen;
+        if (fillHasRug(fill)) rugCellCount++;
         const cell: ColumnCell = {
           row: j0,
           rowSpan: j1 - j0,
@@ -580,6 +615,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
           row: j0,
           rowSpan: cell.rowSpan,
           fill,
+          led: config.led.enabled,
           x: xs[c] + t,
           y: bodyBase + moduleBase + cell.y,
           z: gBack,
@@ -596,6 +632,26 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
       }
       colCells.push(list);
     }
+
+    // ---- Deurgeometrie (dichtvak) -------------------------------------------
+    // Inliggende deur met DOOR_GAP rondom; scharnieren aan de buitenkant van
+    // de kast (linkerhelft links, rechterhelft rechts), zodat deuren naar het
+    // midden toe openen. Deurvoorkant = ondiepste punt van het vak.
+    const doorHingeLeft = (c: number) => c + 0.5 < columns / 2;
+    const doorGeometry = (c: number, cell: ColumnCell) => {
+      const w = round1(colWidth(c) - 2 * DOOR_GAP);
+      const h = round1(cell.h - 2 * DOOR_GAP);
+      let front = Math.min(staanderFront(c), staanderFront(c + 1));
+      for (let k = 0; k <= 8; k++) {
+        front = Math.min(front, frontAt(xs[c] + t + (colWidth(c) * k) / 8));
+      }
+      front = round1(front);
+      const n = h <= 900 ? 2 : h <= 1600 ? 3 : 4;
+      const endOff = Math.min(HINGE_END_OFFSET, h / 4);
+      const span = h - 2 * endOff;
+      const hingeV = Array.from({ length: n }, (_, k) => round1(endOff + (span * k) / (n - 1)));
+      return { w, h, front, hingeV };
+    };
 
     // ---- Staanders ----------------------------------------------------------
     for (let i = 0; i <= columns; i++) {
@@ -675,7 +731,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
         // (alleen bij rug-in-sponning; geschroefde rug heeft geen groeven).
         if (sponning) {
           for (const cell of colCells[colOfSide]) {
-            if (cell.fill !== "rug") continue;
+            if (!fillHasRug(cell.fill)) continue;
             const gBack = bi + (behindSkirt(moduleBase + cell.y) ? skirtDepth : 0);
             ops.push({
               kind: "rect",
@@ -687,6 +743,34 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
               h: RUG_GROOVE_WIDTH,
               depth: RUG_GROOVE_DEPTH,
             });
+          }
+        }
+
+        // Montageplaten van de deurscharnieren (dichtvak) aan deze zijde:
+        // per scharnier twee Ø5-boringen, 32 mm uit elkaar, op 37 mm van de
+        // deurvoorkant (systeem 32). Buitenstaanders en dado-staanders
+        // (die toch al tweezijdig zijn) blind; anders doorlopend vanaf A,
+        // net als de Cabineo-boutgaten.
+        for (const cell of colCells[colOfSide]) {
+          if (cell.fill !== "deur") continue;
+          const hingeLeft = doorHingeLeft(colOfSide);
+          if ((side === "A") !== hingeLeft) continue;
+          const isOuter = i === 0 || i === columns;
+          const blind = isOuter || joinery === "dado";
+          const door = doorGeometry(colOfSide, cell);
+          for (const hv of door.hingeV) {
+            for (const dy of [-HINGE_PLATE_SCREW_SPACING / 2, HINGE_PLATE_SCREW_SPACING / 2]) {
+              ops.push({
+                kind: "circle",
+                layer: "BOOR_5MM",
+                side: blind ? side : "A",
+                cx: round1(cell.y + DOOR_GAP + hv + dy),
+                cy: lz(door.front - HINGE_PLATE_FRONT),
+                diameter: HINGE_PLATE_SCREW_DIAMETER,
+                depth: blind ? HINGE_PLATE_SCREW_DEPTH : t,
+                through: !blind,
+              });
+            }
           }
         }
       }
@@ -885,9 +969,9 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
         // bovenvlak voor het vak erboven, ondervlak voor het vak eronder.
         // Volgt de (eventueel schuine) achterrand.
         if (sponning) {
-          const rugAbove = j < rows && cellFillFor(config, m, c, j) === "rug";
+          const rugAbove = j < rows && fillHasRug(cellFillFor(config, m, c, j));
           const rugBelow =
-            idx > 0 && cellFillFor(config, m, c, lv[idx - 1]) === "rug";
+            idx > 0 && fillHasRug(cellFillFor(config, m, c, lv[idx - 1]));
           for (const [has, side] of [
             [rugAbove, "A"],
             [rugBelow, "B"],
@@ -924,6 +1008,65 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
           }
         }
 
+        // LED-verlichting: strip aan de onderzijde van deze plank, achter in
+        // het vak eronder (inbouw = groef voor het profiel). Kabeldoorvoer
+        // Ø10 achter-links/-rechts in elke plank behalve de bovenste, zodat
+        // de kabels van alle strips in de kolom omlaag naar de plint lopen.
+        if (config.led.enabled) {
+          const hasCellBelow = idx > 0;
+          if (hasCellBelow && config.led.inbouw) {
+            const x0 = dadoInset + LED_GROOVE_END_MARGIN;
+            const x1 = shelfLen - dadoInset - LED_GROOVE_END_MARGIN;
+            const g0 = LED_GROOVE_BACK_OFFSET - LED_GROOVE_WIDTH / 2;
+            const yL = lz(gBackL) + g0;
+            const yR = lz(gBackR) + g0;
+            if (x1 - x0 > 50) {
+              if (Math.abs(yL - yR) < 0.01) {
+                ops.push({
+                  kind: "rect",
+                  layer: "LED_GROEF_7MM",
+                  side: "B",
+                  x: round1(x0),
+                  y: round1(yL),
+                  w: round1(x1 - x0),
+                  h: LED_GROOVE_WIDTH,
+                  depth: LED_GROOVE_DEPTH,
+                });
+              } else {
+                const yAt = (x: number) => round1(yL + ((yR - yL) * x) / shelfLen);
+                ops.push({
+                  kind: "path",
+                  layer: "LED_GROEF_7MM",
+                  side: "B",
+                  points: [
+                    [round1(x0), yAt(x0)],
+                    [round1(x1), yAt(x1)],
+                    [round1(x1), yAt(x1) + LED_GROOVE_WIDTH],
+                    [round1(x0), yAt(x0) + LED_GROOVE_WIDTH],
+                  ],
+                  depth: LED_GROOVE_DEPTH,
+                });
+              }
+            }
+            ledStripMm += Math.max(0, x1 - x0);
+          } else if (hasCellBelow) {
+            ledStripMm += Math.max(0, shelfLen - 2 * dadoInset - 2 * LED_GROOVE_END_MARGIN);
+          }
+          if (j < rows) {
+            const left = config.led.side === "links";
+            ops.push({
+              kind: "circle",
+              layer: "BOOR_10MM",
+              side: "B",
+              cx: round1(left ? dadoInset + LED_CABLE_SIDE_OFFSET : shelfLen - dadoInset - LED_CABLE_SIDE_OFFSET),
+              cy: lz(left ? gBackL : gBackR) + LED_CABLE_BACK_OFFSET,
+              diameter: LED_CABLE_HOLE_DIAMETER,
+              depth: t,
+              through: true,
+            });
+          }
+        }
+
         // Planken liggen ondersteboven op het bed: gravure mee op zijde B.
         ops.push(engrave(id, shelfLen, plankWidth, "B"));
 
@@ -952,6 +1095,67 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
       }
     }
 
+    // ---- Deuren (dichtvak) --------------------------------------------------
+    // Inliggende deur; bewerkingen (Ø35-cups) aan de binnenzijde (B), de
+    // zichtzijde blijft onbewerkt. Lokaal frame: x langs de langste zijde.
+    for (let c = 0; c < columns; c++) {
+      for (const cell of colCells[c]) {
+        if (cell.fill !== "deur") continue;
+        doorNo++;
+        const id = `D${doorNo}`;
+        const door = doorGeometry(c, cell);
+        const upright = door.h > door.w;
+        const L = upright ? door.h : door.w;
+        const Wd = upright ? door.w : door.h;
+        // (u = horizontaal vanaf links, v = verticaal vanaf onder) → lokaal.
+        const loc = (u: number, v: number): [number, number] => (upright ? [v, u] : [u, v]);
+        const hingeLeft = doorHingeLeft(c);
+        const cupU = hingeLeft ? HINGE_CUP_EDGE : door.w - HINGE_CUP_EDGE;
+        const ops: Operation[] = [];
+        for (const hv of door.hingeV) {
+          const [cx, cy] = loc(cupU, hv);
+          ops.push({
+            kind: "circle",
+            layer: "BOOR_35MM",
+            side: "B",
+            cx: round1(cx),
+            cy: round1(cy),
+            diameter: HINGE_CUP_DIAMETER,
+            depth: Math.min(HINGE_CUP_DEPTH, round1(t - 4)),
+            through: false,
+          });
+          hingeCount++;
+        }
+        ops.push(engrave(id, L, Wd, "B"));
+        if (door.w > DOOR_MAX_WIDTH && !wideDoorWarned) {
+          wideDoorWarned = true;
+          warnings.push(
+            `Een deur is ${door.w} mm breed (> ${DOOR_MAX_WIDTH} mm): zwaar voor potscharnieren — overweeg meer kolommen of een open vak.`,
+          );
+        }
+        panels.push({
+          id,
+          type: "deur",
+          material: "plaat18",
+          length: L,
+          width: Wd,
+          thickness: t,
+          ops,
+          notches: [],
+          machineSide: "B",
+          place: {
+            x: xs[c] + t + DOOR_GAP,
+            y: bodyBase + moduleBase + cell.y + DOOR_GAP,
+            z: door.front - t,
+            w: door.w,
+            h: door.h,
+            d: t,
+          },
+          module: m,
+        });
+      }
+    }
+
     // ---- Rugpanelen (HDF) ---------------------------------------------------
     // Geschroefd: paneel overlapt de achterranden van staanders en planken
     // (halve plaatdikte rondom) en wordt geschroefd — geen groeven nodig.
@@ -960,7 +1164,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
     for (let c = 0; c < columns && !fullBack; c++) {
       const cellBack = backAt(xs[c] + t + colWidth(c) / 2);
       for (const cell of colCells[c]) {
-        if (cell.fill !== "rug") continue;
+        if (!fillHasRug(cell.fill)) continue;
         rugNo++;
         const id = `R${rugNo}`;
         const rw = round1(colWidth(c) + 2 * rugOversize);
@@ -1126,6 +1330,32 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
       hardware.push({ name: "Spaanplaatschroef 3,5 × 16 mm (rug)", qty: screws, unit: "stuks" });
     }
   }
+  if (hingeCount > 0) {
+    hardware.push({
+      name: "Potscharnier Ø35 inliggend (110°) incl. montageplaat",
+      qty: hingeCount,
+      unit: "stuks",
+    });
+    hardware.push({ name: "Push-to-open magneetsnapper", qty: doorNo, unit: "stuks" });
+  }
+  if (config.led.enabled && ledStripMm > 0) {
+    const meters = Math.ceil(ledStripMm / 100) / 10;
+    hardware.push({ name: "LED-strip 24 V (warmwit)", qty: meters, unit: "m" });
+    if (config.led.inbouw) {
+      hardware.push({ name: "LED-inbouwprofiel 17 × 7 mm met diffusor", qty: meters, unit: "m" });
+    }
+    const watt = meters * LED_WATT_PER_M;
+    hardware.push({
+      name: `LED-driver 24 V ${LED_DRIVER_WATT} W`,
+      qty: Math.max(1, Math.ceil((watt * 1.2) / LED_DRIVER_WATT)),
+      unit: "stuks",
+    });
+    hardware.push({
+      name: "LED-kabel 2-aderig (doorvoer door de planken)",
+      qty: Math.ceil((config.height * columns) / 1000) + 2,
+      unit: "m",
+    });
+  }
   hardware.push({ name: "L-beugel muurbevestiging", qty: 2, unit: "stuks" });
   if (config.base === "pootjes") {
     hardware.push({
@@ -1152,9 +1382,24 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
         `Onderdeel ${p.id} is ${p.length} mm lang en past niet binnen de bruikbare plaatlengte van ${MAX_PART_LENGTH} mm.`,
       );
     }
-    if (p.material === "plaat18" && p.width > D + 0.01 && p.type !== "plint") {
+    if (p.material === "plaat18" && p.width > D + 0.01 && p.type !== "plint" && p.type !== "deur") {
       warnings.push(`Onderdeel ${p.id} is breder dan de kastdiepte.`);
     }
+  }
+  if (doorNo > 0 && profiled) {
+    warnings.push(
+      "Dichtvakken bij een voorkantprofiel: de deur ligt vlak op het ondiepste punt van het vak en volgt de glooiing niet.",
+    );
+  }
+  if (doorNo > 0 && t < 16) {
+    warnings.push(
+      `Plaatdikte ${t} mm is krap voor Ø35-scharniercups (13 mm diep) — de cups worden ${Math.round((t - 4) * 10) / 10} mm diep gefreesd; gebruik liever 16 mm of dikker.`,
+    );
+  }
+  if (config.led.enabled && config.led.inbouw && t < 15) {
+    warnings.push(
+      `LED-inbouwgroef (7 mm diep) in ${t} mm plaat laat weinig materiaal over — kies opbouw of een dikkere plaat.`,
+    );
   }
   if (joinery === "cabineo" && t < CABINEO_MIN_THICKNESS[config.cabineoSize]) {
     warnings.push(

@@ -17,6 +17,8 @@ export class CabinetScene {
   private cellProxies: THREE.Mesh[] = [];
   private shelfTargets: THREE.Mesh[] = [];
   private ghostMat: THREE.MeshBasicMaterial;
+  private ledMat: THREE.MeshBasicMaterial;
+  private ledGlowMat: THREE.MeshBasicMaterial;
   private toonMatSelected: THREE.MeshToonMaterial;
   private feetMat: THREE.MeshToonMaterial;
   private gradTex: THREE.CanvasTexture;
@@ -81,6 +83,14 @@ export class CabinetScene {
       depthWrite: false,
     });
     // Weggelaten planken: doorzichtig, aantikken zet ze terug.
+    this.ledMat = new THREE.MeshBasicMaterial({ color: 0xfff3c4 });
+    this.ledGlowMat = new THREE.MeshBasicMaterial({
+      color: 0xffe9a8,
+      transparent: true,
+      opacity: 0.22,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
     this.ghostMat = new THREE.MeshBasicMaterial({
       color: 0x2563eb,
       transparent: true,
@@ -305,6 +315,29 @@ export class CabinetScene {
       mesh.userData.shelfKey = g.key;
       group.add(mesh);
       this.shelfTargets.push(mesh);
+    }
+
+    // LED-strips: lichtgevende strip achter-boven in elk vak, met een zachte
+    // gloed over de achterwand van het vak.
+    for (const cell of model.cells) {
+      if (!cell.led) continue;
+      const len = Math.max(0, cell.w - 60);
+      if (len <= 0) continue;
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(len, 4, 10), this.ledMat);
+      strip.position.set(
+        off.x + cell.x + cell.w / 2,
+        off.y + cell.y + cell.h - 2,
+        off.z + cell.z + 28,
+      );
+      group.add(strip);
+      const glowH = Math.min(cell.h * 0.6, 260);
+      const glow = new THREE.Mesh(new THREE.PlaneGeometry(len, glowH), this.ledGlowMat);
+      glow.position.set(
+        off.x + cell.x + cell.w / 2,
+        off.y + cell.y + cell.h - glowH / 2 - 4,
+        off.z + cell.z + 6,
+      );
+      group.add(glow);
     }
 
     // Onzichtbare vak-volumes voor rug-toggles: alleen de achterste helft

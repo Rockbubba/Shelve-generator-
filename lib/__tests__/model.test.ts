@@ -7,6 +7,7 @@ import {
   SHEET_LENGTH,
   SHEET_MARGIN,
   SHEET_WIDTH,
+  SHEET_MATERIALS,
   depthOption,
 } from "../config";
 import {
@@ -944,5 +945,137 @@ describe("opslag: normaliseren en deellink", () => {
     expect(decodeConfig(encoded)).toEqual(config);
     expect(encodeConfig(DEFAULT_CONFIG).length).toBeLessThan(encoded.length);
     expect(decodeConfig("dit is geen geldige link")).toBeNull();
+  });
+});
+
+describe("betonplex, LED-verlichting en dichtvak", () => {
+  it("betonplex is beschikbaar als nerfloos materiaal", () => {
+    const b = SHEET_MATERIALS.find((m) => m.id === "betonplex")!;
+    expect(b).toBeDefined();
+    expect(b.diktes).toContain(18);
+    expect(b.nerf).toBeFalsy();
+    const model = buildCabinetModel({ ...ACCEPT, materialId: "betonplex" });
+    expect(model.warnings.filter((w) => w.includes("materiaal"))).toHaveLength(0);
+  });
+
+  it("LED: groef en kabeldoorvoer in de planken, vrij van de verbindingen", () => {
+    for (const joinery of ["dado", "cabineo"] as const) {
+      const model = buildCabinetModel({
+        ...ACCEPT,
+        joinery,
+        led: { enabled: true, side: "rechts", inbouw: true },
+      });
+      const planken = model.panels.filter((p) => p.type === "plank");
+      for (const p of planken) {
+        const holes = p.ops.filter((o) => o.kind === "circle" && o.layer === "BOOR_10MM") as CircleOp[];
+        const grooves = p.ops.filter((o) => o.layer === "LED_GROEF_7MM");
+        const isTop = p.place.y + p.place.h >= ACCEPT.height - 0.01;
+        const isBottom = p.place.y <= 0.01;
+        // Doorvoer in alle planken behalve de bovenste; groef boven elk vak (niet in de onderste plank).
+        expect(holes.length, `${p.id} doorvoer`).toBe(isTop ? 0 : 1);
+        expect(grooves.length, `${p.id} groef`).toBe(isBottom ? 0 : 1);
+        for (const h of holes) {
+          expect(h.through).toBe(true);
+          expect(h.cx).toBeGreaterThan(p.length / 2); // rechts
+          expect(h.cy).toBeLessThan(40); // achter
+        }
+        // Groef start voorbij de Cabineo-pockets (≤ 33,5 mm vanaf het uiteinde).
+        for (const g of grooves) {
+          if (g.kind === "rect") {
+            expect(g.x).toBeGreaterThanOrEqual(33.5);
+            expect(g.x + g.w).toBeLessThanOrEqual(p.length - 33.5);
+            expect(g.depth).toBe(7);
+          }
+        }
+        // Geen overlap tussen doorvoer en Cabineo-pockets/dado-deuvels.
+        for (const h of holes) {
+          for (const o of p.ops) {
+            if (o.kind === "circle" && o !== h) {
+              const dist = Math.hypot(o.cx - h.cx, o.cy - h.cy);
+              expect(dist, `${p.id}: ${o.layer} vs doorvoer`).toBeGreaterThan(o.diameter / 2 + 5);
+            }
+            if (o.kind === "path") {
+              for (const [px, py] of o.points) {
+                expect(Math.hypot(px - h.cx, py - h.cy), `${p.id}: pocket vs doorvoer`).toBeGreaterThan(5);
+              }
+            }
+          }
+        }
+      }
+      expect(model.hardware.some((h) => h.name.startsWith("LED-strip"))).toBe(true);
+      expect(model.hardware.some((h) => h.name.startsWith("LED-driver"))).toBe(true);
+      expect(nestPanels(model.panels).errors).toHaveLength(0);
+    }
+    // Opbouw: geen groef, wel doorvoer en strip.
+    const opbouw = buildCabinetModel({ ...ACCEPT, led: { enabled: true, side: "links", inbouw: false } });
+    expect(opbouw.panels.some((p) => p.ops.some((o) => o.layer === "LED_GROEF_7MM"))).toBe(false);
+    expect(opbouw.panels.some((p) => p.ops.some((o) => o.layer === "BOOR_10MM"))).toBe(true);
+    expect(opbouw.hardware.some((h) => h.name.includes("inbouwprofiel"))).toBe(false);
+    expect(opbouw.cells.every((c) => c.led)).toBe(true);
+  });
+
+  it("dichtvak: inliggende deur met Ø35-cups, montageplaatboringen in de staander en een rugpaneel", () => {
+    const model = buildCabinetModel({ ...ACCEPT, cellFills: { "0:1:1": "deur" } });
+    const cell = model.cells.find((c) => c.key === "0:1:1")!;
+    expect(cell.fill).toBe("deur");
+    const doors = model.panels.filter((p) => p.type === "deur");
+    expect(doors).toHaveLength(1);
+    const d = doors[0];
+    expect(d.place.w).toBeCloseTo(cell.w - 4, 1);
+    expect(d.place.h).toBeCloseTo(cell.h - 4, 1);
+    expect(d.place.z + d.place.d).toBeCloseTo(ACCEPT.depth, 1); // vlak met de voorkant
+    expect(d.machineSide).toBe("B");
+    const cups = d.ops.filter((o): o is CircleOp => o.kind === "circle" && o.layer === "BOOR_35MM");
+    expect(cups).toHaveLength(2);
+    for (const c of cups) {
+      expect(c.diameter).toBe(35);
+      expect(c.depth).toBe(13);
+      expect(c.through).toBe(false);
+      expect(c.cx).toBeGreaterThanOrEqual(0);
+      expect(c.cx).toBeLessThanOrEqual(d.length);
+      expect(c.cy).toBeGreaterThanOrEqual(0);
+      expect(c.cy).toBeLessThanOrEqual(d.width);
+    }
+    // Kolom 1 van 4 → scharnier links → staander S2 (A-zijde): 2 scharnieren × 2 boringen.
+    const s2 = model.panels.find((p) => p.id === "S2")!;
+    const plate = s2.ops.filter(
+      (o): o is CircleOp => o.kind === "circle" && o.layer === "BOOR_5MM" && o.diameter === 5,
+    );
+    expect(plate).toHaveLength(4);
+    for (const h of plate) {
+      expect(h.side).toBe("A");
+      expect(h.cy).toBeCloseTo(ACCEPT.depth - 37, 1);
+    }
+    const s3 = model.panels.find((p) => p.id === "S3")!;
+    expect(s3.ops.filter((o) => o.kind === "circle" && o.diameter === 5)).toHaveLength(0);
+    // Dichtvak heeft ook een rugpaneel.
+    const rugs = model.panels.filter((p) => p.type === "rug");
+    const base = buildCabinetModel(ACCEPT).panels.filter((p) => p.type === "rug");
+    expect(rugs.length).toBe(base.length + 1);
+    expect(model.hardware.find((h) => h.name.startsWith("Potscharnier"))?.qty).toBe(2);
+    expect(model.hardware.find((h) => h.name.startsWith("Push-to-open"))?.qty).toBe(1);
+    // Nesting en DXF.
+    const nesting = nestPanels(model.panels);
+    expect(nesting.errors).toHaveLength(0);
+    const all = nesting.sheets.map((s) => sheetToDxf(s)).join("\n");
+    expect(all).toContain("BOOR_35MM_D13");
+  });
+
+  it("dichtvak rechts scharniert rechts; hoge deur krijgt 3 scharnieren; volledige rug blijft mogelijk", () => {
+    const model = buildCabinetModel({
+      ...ACCEPT,
+      omittedShelves: { "0:3:2": true, "0:3:3": true },
+      cellFills: { "0:3:1": "deur" },
+      rugMode: "volledig",
+    });
+    const door = model.panels.find((p) => p.type === "deur")!;
+    expect(door.place.h).toBeGreaterThan(900);
+    expect(door.ops.filter((o) => o.layer === "BOOR_35MM")).toHaveLength(3);
+    const s5 = model.panels.find((p) => p.id === "S5")!; // rechter buitenstaander, B-zijde
+    const plate = s5.ops.filter((o): o is CircleOp => o.kind === "circle" && o.diameter === 5);
+    expect(plate).toHaveLength(6);
+    expect(plate.every((h) => h.side === "B" && !h.through)).toBe(true);
+    expect(model.panels.filter((p) => p.type === "rug").length).toBeGreaterThan(0);
+    expect(nestPanels(model.panels).errors).toHaveLength(0);
   });
 });

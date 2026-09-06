@@ -212,6 +212,29 @@ boringen op de juiste plek zitten.
   base64url) om het ontwerp op een ander apparaat te openen of naar ons te
   sturen. "Opnieuw beginnen" zet alles terug naar de standaardkast. Oudere
   opgeslagen configuraties worden bij het laden aangevuld met nieuwe velden.
+- **Dichtvak** (`cellFills` = `deur`): tik een vak in 3D van open → rug →
+  dichtvak. Een dichtvak krijgt een inliggende deur (2 mm lucht rondom,
+  voorkant vlak met het ondiepste punt van het vak) plús een rugpaneel. De
+  deur wordt van de binnenzijde bewerkt: Ø35-scharniercups 13 mm diep op
+  22,5 mm van de scharnierkant (laag `BOOR_35MM_D13`), 2 scharnieren tot
+  900 mm deurhoogte, 3 tot 1600, anders 4. De staander aan de scharnierkant
+  krijgt per scharnier twee Ø5-boringen (32 mm uit elkaar, systeem 32) op
+  37 mm van de deurvoorkant; blind bij buitenstaanders en dado-staanders,
+  anders doorlopend vanaf zijde A (zoals de Cabineo-boutgaten). Scharnieren
+  zitten aan de buitenkant van de kast (linkerhelft links, rechterhelft
+  rechts), push-to-open zonder greep. Deuren breder dan 600 mm geven een
+  waarschuwing.
+- **LED-verlichting** (`led`): een 24 V-strip achter-boven in elk vak, aan
+  de onderzijde van de plank erboven. *Inbouw* freest een groef 17 × 7 mm
+  (laag `LED_GROEF_7MM`, hart op 28 mm van de achterrand, 40 mm vrij van de
+  plankuiteinden zodat Cabineo-pockets en deuvels vrij blijven); *opbouw*
+  laat de groef weg. Elke plank behalve de bovenste krijgt een Ø10-doorvoer
+  (`BOOR_10MM_DOOR`) achter-links of -rechts (keuze), 45 mm uit het
+  staandervlak, zodat de kabels per kolom omlaag naar de plint lopen waar de
+  driver komt. De BOM telt striplengte, profiel, driver(s) en kabel; de 3D
+  toont de strips met gloed.
+- **Betonplex** als materiaal (12/15/18/21 mm), filmbekleed dus nerfloos:
+  onderdelen mogen gedraaid genest worden.
 - **Plint**: 80 mm hoog tussen de buitenste staanders; standaard 40 mm
   teruggelegd t.o.v. het ondiepste punt van de voorkant, maar ook vlak met
   de voorkant of op een eigen maat (0–150 mm) te zetten.

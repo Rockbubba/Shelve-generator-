@@ -50,6 +50,7 @@ export function normalizeConfig(raw: unknown): CabinetConfig {
     backTaper: obj(DEFAULT_CONFIG.backTaper, r.backTaper),
     wallSkirting: obj(DEFAULT_CONFIG.wallSkirting, r.wallSkirting),
     feet: obj(DEFAULT_CONFIG.feet, r.feet),
+    led: obj(DEFAULT_CONFIG.led, r.led),
   };
 }
 

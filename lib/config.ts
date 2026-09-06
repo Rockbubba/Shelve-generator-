@@ -24,6 +24,29 @@ export const RUG_GROOVE_BACK_OFFSET = 12; // hart van de groef t.o.v. achterkant
 export const RUG_CLEARANCE = 1; // speling per zijde van het HDF-paneel
 export const RUG_SCREWS_PER_PANEL = 8; // bij geschroefde rug
 
+// LED-verlichting: strip achter-boven in elk vak (onderzijde plank erboven).
+export const LED_GROOVE_WIDTH = 17; // inbouwprofiel 17 × 7 mm
+export const LED_GROOVE_DEPTH = 7;
+export const LED_GROOVE_BACK_OFFSET = 28; // hart van de groef t.o.v. achterrand plank
+export const LED_GROOVE_END_MARGIN = 40; // groef stopt zoveel mm vóór de plankuiteinden (vrij van Cabineo/deuvels)
+export const LED_CABLE_HOLE_DIAMETER = 10; // kabeldoorvoer, doorlopend
+export const LED_CABLE_BACK_OFFSET = 28; // hart doorvoer t.o.v. achterrand plank
+export const LED_CABLE_SIDE_OFFSET = 45; // hart doorvoer t.o.v. staandervlak
+export const LED_WATT_PER_M = 9.6; // 24 V strip, voor de driverkeuze
+export const LED_DRIVER_WATT = 150;
+
+// Dichtvak: inliggende deur op potscharnieren (Ø35 cup), plus rugpaneel.
+export const DOOR_GAP = 2; // luchtspleet rondom (mm)
+export const HINGE_CUP_DIAMETER = 35;
+export const HINGE_CUP_DEPTH = 13;
+export const HINGE_CUP_EDGE = 22.5; // hart cup vanaf de scharnierkant van de deur (boorafstand 5 mm)
+export const HINGE_END_OFFSET = 100; // hart bovenste/onderste scharnier vanaf deurrand
+export const HINGE_PLATE_FRONT = 37; // rij montageplaat-boringen vanaf de deurvoorkant (systeem 32)
+export const HINGE_PLATE_SCREW_SPACING = 32;
+export const HINGE_PLATE_SCREW_DIAMETER = 5;
+export const HINGE_PLATE_SCREW_DEPTH = 11;
+export const DOOR_MAX_WIDTH = 600;
+
 // ---- Verbindingen -----------------------------------------------------------
 export const DADO_DEPTH = 7; // blinde dado diepte in staander
 export const DADO_FRONT_STOP = 30; // dado stopt zoveel mm vóór de voorzijde
@@ -117,6 +140,9 @@ export const SHEET_MATERIALS: SheetMaterial[] = [
   { id: "multiplex", naam: "Multiplex berken", diktes: [12, 15, 18, 21, 24], nerf: true },
   { id: "spaanplaat", naam: "Spaanplaat (melamine)", diktes: [18, 25] },
   { id: "hpl", naam: "HPL / compact", diktes: [10, 12, 13], hpl: true },
+  // Betonplex: filmbeklede multiplex (bruin/zwart), industriële look; de
+  // film heeft geen nerfrichting, dus onderdelen mogen gedraaid genest worden.
+  { id: "betonplex", naam: "Betonplex", diktes: [12, 15, 18, 21] },
 ];
 
 export function materialById(id: string): SheetMaterial {
@@ -179,6 +205,15 @@ export interface WallSkirting {
   depth: number;
 }
 
+export type LedSide = "links" | "rechts";
+export interface LedConfig {
+  enabled: boolean;
+  /** Kant van elk vak waar de kabel omlaag loopt (doorvoer in de planken). */
+  side: LedSide;
+  /** Inbouw: groef 17 × 7 mm voor een aluminium profiel; anders opbouw. */
+  inbouw: boolean;
+}
+
 export type FeetType = "rond" | "vierkant" | "conisch";
 export interface FeetConfig {
   type: FeetType;
@@ -224,7 +259,8 @@ export function frontOffset(profile: FrontProfile, x: number, width: number): nu
 
 /**
  * Vulling van een vak. v1 gebruikt alleen `open` en `rug`;
- * `deur`, `lade` en `diagonaal` zitten al in het datamodel voor v2.
+ * `deur` = dichtvak: inliggende deur op potscharnieren én een rugpaneel.
+ * `lade` en `diagonaal` zitten al in het datamodel voor v2.
  */
 export type CellFill = "open" | "rug" | "deur" | "lade" | "diagonaal";
 
@@ -289,6 +325,8 @@ export interface CabinetConfig {
    * (mm). 0 = vlak (flush) met de voorkant; standaard 40.
    */
   plinthSetback: number;
+  /** LED-strip achter-boven in elk vak, met kabeldoorvoer door de planken. */
+  led: LedConfig;
 }
 
 export const DEFAULT_CONFIG: CabinetConfig = {
@@ -318,6 +356,7 @@ export const DEFAULT_CONFIG: CabinetConfig = {
   color: "#ffffff",
   rugColor: "#e8e4dc",
   plinthSetback: PLINTH_SETBACK,
+  led: { enabled: false, side: "links", inbouw: true },
 };
 
 // ---- Diepte-opties (strip-nesting) ------------------------------------------

@@ -22,6 +22,7 @@ const TYPE_LABELS: Record<PanelType, string> = {
   staander: "Staander",
   plank: "Plank",
   plint: "Plint",
+  deur: "Deur (dichtvak)",
   rug: "Rugpaneel (HDF)",
 };
 
@@ -72,7 +73,7 @@ export function buildBom(model: CabinetModel, nesting: NestingResult): BomRow[] 
     });
   }
 
-  const order: PanelType[] = ["staander", "plank", "plint", "rug"];
+  const order: PanelType[] = ["staander", "plank", "deur", "plint", "rug"];
   rows.sort(
     (a, b) => order.indexOf(a.type) - order.indexOf(b.type) || b.length - a.length,
   );

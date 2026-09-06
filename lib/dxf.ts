@@ -23,6 +23,9 @@ const BASE_LAYER_COLORS: Record<string, number> = {
   BOOR_15MM: 5,
   CABINEO_11MM: 6,
   RUG_SPONNING: 3,
+  LED_GROEF_7MM: 2,
+  BOOR_10MM: 5,
+  BOOR_35MM: 5,
   GRAVURE: 8,
 };
 

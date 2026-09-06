@@ -112,7 +112,11 @@ export function Segmented<T extends string | number>({
   return (
     <div className="py-2">
       <span className="text-sm font-medium">{label}</span>
-      <div className="mt-1 grid auto-cols-fr grid-flow-col gap-1 rounded-xl bg-neutral-100 p-1">
+      <div
+        className={`mt-1 grid gap-1 rounded-xl bg-neutral-100 p-1 ${
+          options.length > 4 ? "grid-cols-3" : "auto-cols-fr grid-flow-col"
+        }`}
+      >
         {options.map((opt) => (
           <button
             key={String(opt.value)}
