@@ -32,6 +32,7 @@ import Viewer3D from "./Viewer3D";
 import BottomSheet, { SheetSnap } from "./BottomSheet";
 import NestingPreview from "./NestingPreview";
 import BomView from "./BomView";
+import LayoutEditor from "./LayoutEditor";
 import { Segmented, Stepper, Toggle } from "./controls";
 
 const STEPS = ["Maatvoering", "Vakverdeling", "Opties", "Output"] as const;
@@ -44,6 +45,8 @@ export default function Configurator() {
   const [config, setConfig] = useState<CabinetConfig>(DEFAULT_CONFIG);
   const [step, setStep] = useState(0);
   const [snap, setSnap] = useState<SheetSnap>("half");
+  /** Geselecteerde tussenplank (sleutel) voor hoogte/weglaten. */
+  const [selectedShelf, setSelectedShelf] = useState<string | null>(null);
 
   const model = useMemo(() => buildCabinetModel(config), [config]);
   const nesting = useMemo(
@@ -86,14 +89,36 @@ export default function Configurator() {
     });
   }, []);
 
+  // Tik op een ghost-plank zet hem terug; tik op een echte plank selecteert
+  // hem (verplaatsen/weglaten gaat via de indelingseditor in stap 2).
   const onShelfTap = useCallback((key: string) => {
     setConfig((c) => {
+      if (!c.omittedShelves[key]) return c;
       const omitted = { ...c.omittedShelves };
-      if (omitted[key]) delete omitted[key];
-      else omitted[key] = true;
+      delete omitted[key];
       return { ...c, omittedShelves: omitted };
     });
+    setSelectedShelf((cur) => (cur === key ? null : key));
+    setStep(1);
   }, []);
+
+  const setShelfOffset = useCallback((key: string, offset: number) => {
+    setConfig((c) => {
+      const shelfOffsets = { ...c.shelfOffsets };
+      if (Math.abs(offset) < 0.01) delete shelfOffsets[key];
+      else shelfOffsets[key] = Math.round(offset);
+      return { ...c, shelfOffsets };
+    });
+  }, []);
+
+  const omitShelf = useCallback((key: string) => {
+    setConfig((c) => ({ ...c, omittedShelves: { ...c.omittedShelves, [key]: true } }));
+    setSelectedShelf(null);
+  }, []);
+
+  const selectedPlank = selectedShelf
+    ? model.panels.find((p) => p.shelfKey === selectedShelf) ?? null
+    : null;
 
   const peek = (
     <div className="flex items-center justify-between">
@@ -254,20 +279,79 @@ export default function Configurator() {
           <p className="mt-1 text-xs text-neutral-500">
             Vakbreedte: {formatMm(model.cellWidth)} mm.
           </p>
-          <div className="mt-2 rounded-xl bg-neutral-50 p-3 text-xs text-neutral-600">
-            <p className="font-medium text-neutral-800">Speelse indeling</p>
-            <p className="mt-1">
-              Tik in de 3D-weergave op een tussenplank om hem weg te laten: de
-              vakken erboven en eronder worden één hoog vak. Tik op de
-              doorzichtige plank om hem terug te zetten.
-            </p>
-            {Object.keys(config.omittedShelves).length > 0 && (
+          <div className="mt-3">
+            <div className="mb-1 flex items-baseline justify-between">
+              <span className="text-sm font-medium">Indeling per kolom</span>
+              <span className="text-xs text-neutral-500">
+                tik of sleep een tussenplank
+              </span>
+            </div>
+            <LayoutEditor
+              model={model}
+              offsets={config.shelfOffsets}
+              selected={selectedShelf}
+              onSelect={setSelectedShelf}
+              onOffsetChange={setShelfOffset}
+              onRestore={onShelfTap}
+            />
+            {selectedPlank && selectedShelf ? (
+              <div className="mt-2 rounded-xl bg-blue-50 p-3">
+                <Stepper
+                  label="Hoogte onderkant plank"
+                  value={Math.round(selectedPlank.place.y)}
+                  min={0}
+                  max={config.height}
+                  step={10}
+                  onChange={(v) =>
+                    setShelfOffset(
+                      selectedShelf,
+                      (config.shelfOffsets[selectedShelf] ?? 0) + (v - selectedPlank.place.y),
+                    )
+                  }
+                  hint="minimaal 120 mm vakhoogte"
+                />
+                <div className="mt-1 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="btn-touch rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium active:bg-neutral-100"
+                    onClick={() => setShelfOffset(selectedShelf, 0)}
+                  >
+                    Terug op grid
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-touch rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium active:bg-neutral-100"
+                    onClick={() => omitShelf(selectedShelf)}
+                  >
+                    Plank weglaten
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-touch ml-auto rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white active:bg-neutral-700"
+                    onClick={() => setSelectedShelf(null)}
+                  >
+                    Klaar
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="mt-2 text-xs text-neutral-500">
+                Selecteer een tussenplank (hier of in 3D) om hem hoger/lager te
+                zetten of weg te laten. Weggelaten planken zijn gestippeld —
+                tik erop om ze terug te zetten.
+              </p>
+            )}
+            {(Object.keys(config.omittedShelves).length > 0 ||
+              Object.keys(config.shelfOffsets).length > 0) && (
               <button
                 type="button"
-                className="btn-touch mt-2 rounded-lg border border-neutral-300 px-3 py-1.5 font-medium text-neutral-700 active:bg-neutral-100"
-                onClick={() => update({ omittedShelves: {} })}
+                className="btn-touch mt-2 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 active:bg-neutral-100"
+                onClick={() => {
+                  update({ omittedShelves: {}, shelfOffsets: {} });
+                  setSelectedShelf(null);
+                }}
               >
-                Alle planken terug ({Object.keys(config.omittedShelves).length} weggelaten)
+                Alles terug naar het grid
               </button>
             )}
           </div>
@@ -497,7 +581,12 @@ export default function Configurator() {
       {/* Mobiel: 3D bovenin (sticky), bottom sheet eronder. */}
       <div className="lg:hidden">
         <div className="fixed inset-x-0 top-0 h-[55dvh]">
-          <Viewer3D model={model} onCellTap={onCellTap} onShelfTap={onShelfTap} />
+          <Viewer3D
+            model={model}
+            onCellTap={onCellTap}
+            onShelfTap={onShelfTap}
+            selectedShelf={selectedShelf}
+          />
         </div>
         <BottomSheet snap={snap} onSnapChange={setSnap} peek={peek} footer={navButtons}>
           {settings}
@@ -512,7 +601,12 @@ export default function Configurator() {
           <div className="mt-4">{navButtons}</div>
         </aside>
         <main className="relative">
-          <Viewer3D model={model} onCellTap={onCellTap} onShelfTap={onShelfTap} />
+          <Viewer3D
+            model={model}
+            onCellTap={onCellTap}
+            onShelfTap={onShelfTap}
+            selectedShelf={selectedShelf}
+          />
         </main>
         <aside className="overflow-y-auto border-l border-neutral-200 p-4">
           <div className="mb-3 rounded-2xl bg-neutral-900 p-4 text-white">

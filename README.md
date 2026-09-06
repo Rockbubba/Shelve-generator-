@@ -151,6 +151,12 @@ boringen op de juiste plek zitten.
   als doorzichtige ghost zichtbaar — aantikken zet hem terug. Boven- en
   onderplank zijn structureel en blijven altijd. Boven 1000 mm vakhoogte
   waarschuwt de validatie voor ontbrekend dwarsverband.
+- **Vakhoogtes per kolom**: in stap 2 staat een compact vooraanzicht van de
+  indeling. Tik op een tussenplank (daar of in 3D) om hem te selecteren en
+  sleep hem omhoog/omlaag (snapt op 10 mm) of gebruik de stepper; de
+  vakken in die kolom veranderen mee, buurkolommen niet. Het model begrenst
+  op 120 mm vakhoogte. Dado's/boringen in de staanders volgen per zijde.
+  "Plank weglaten" en "Terug op grid" staan bij de geselecteerde plank.
 - **Voorkantprofiel** (recht / golf / bol / hol / schuin): de voorkant wijkt
   over de breedte terug volgens `frontOffset(x)`. Staanders krijgen de
   diepte op hun eigen positie (rechthoekig, dado stopt 30 mm vóór hun eigen

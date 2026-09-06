@@ -8,10 +8,12 @@ export default function Viewer3D({
   model,
   onCellTap,
   onShelfTap,
+  selectedShelf = null,
 }: {
   model: CabinetModel;
   onCellTap: (cellKey: string) => void;
   onShelfTap: (shelfKey: string) => void;
+  selectedShelf?: string | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<CabinetScene | null>(null);
@@ -35,8 +37,8 @@ export default function Viewer3D({
   }, []);
 
   useEffect(() => {
-    sceneRef.current?.updateModel(model);
-  }, [model]);
+    sceneRef.current?.updateModel(model, selectedShelf);
+  }, [model, selectedShelf]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 }

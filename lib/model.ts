@@ -449,6 +449,32 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
       return levels;
     };
 
+    // Per-kolom plankhoogtes: gridpositie + eventuele verschuiving, van
+    // onder naar boven begrensd zodat elk vak minimaal MIN_CELL_HEIGHT hoog
+    // blijft (ook t.o.v. de eerstvolgende aanwezige plank erboven).
+    const colLevelY: number[][] = [];
+    for (let c = 0; c < columns; c++) {
+      const ys = [...levelY];
+      let prevY = levelY[0];
+      for (let j = 1; j < rows; j++) {
+        if (!shelfPresent(c, j)) continue;
+        const raw = levelY[j] + (config.shelfOffsets[shelfKey(m, c, j)] ?? 0);
+        let nextY = levelY[rows];
+        for (let k = j + 1; k < rows; k++) {
+          if (shelfPresent(c, k)) {
+            nextY = levelY[k] + (config.shelfOffsets[shelfKey(m, c, k)] ?? 0);
+            break;
+          }
+        }
+        const lo = prevY + t + MIN_CELL_HEIGHT;
+        const hi = Math.max(lo, nextY - t - MIN_CELL_HEIGHT);
+        ys[j] = round1(Math.min(Math.max(raw, lo), hi));
+        prevY = ys[j];
+      }
+      colLevelY.push(ys);
+    }
+    const levelYFor = (c: number, j: number) => colLevelY[c][j];
+
     // Vakken (voor raycast-toggles en rugpanelen), per kolom samengevoegd.
     const colCells: ColumnCell[][] = [];
     for (let c = 0; c < columns; c++) {
@@ -462,8 +488,8 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
         const cell: ColumnCell = {
           row: j0,
           rowSpan: j1 - j0,
-          y: levelY[j0] + t,
-          h: round1(levelY[j1] - (levelY[j0] + t)),
+          y: levelYFor(c, j0) + t,
+          h: round1(levelYFor(c, j1) - (levelYFor(c, j0) + t)),
           fill,
         };
         list.push(cell);
@@ -512,7 +538,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
               kind: "rect",
               layer: "DADO_7MM",
               side,
-              x: levelY[j],
+              x: levelYFor(colOfSide, j),
               y: 0,
               w: t,
               h: Di - DADO_FRONT_STOP,
@@ -523,7 +549,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
               kind: "circle",
               layer: "BOOR_8MM",
               side,
-              cx: levelY[j] + t / 2,
+              cx: levelYFor(colOfSide, j) + t / 2,
               cy: (Di - DADO_FRONT_STOP) / 2,
               diameter: DOWEL_DIAMETER,
               depth: DADO_DEPTH + 8,
@@ -545,7 +571,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
                 kind: "circle",
                 layer: hplMaterial ? "BOOR_5_5MM" : "BOOR_5MM",
                 side: isOuter ? side : "A",
-                cx: levelY[j] + t / 2,
+                cx: levelYFor(colOfSide, j) + t / 2,
                 cy,
                 diameter: hplMaterial
                   ? CABINEO_BOLT_DIAMETER_HPL
@@ -627,7 +653,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
           key: shelfKey(m, c, j),
           place: {
             x: plankX0,
-            y: moduleBase + levelY[j],
+            y: moduleBase + levelYFor(c, j),
             z: 0,
             w: shelfLen,
             h: t,
@@ -784,7 +810,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
           shelfKey: j > 0 && j < rows ? shelfKey(m, c, j) : undefined,
           place: {
             x: plankX0,
-            y: moduleBase + levelY[j],
+            y: moduleBase + levelYFor(c, j),
             z: 0,
             w: shelfLen,
             h: t,

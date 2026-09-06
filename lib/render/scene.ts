@@ -17,6 +17,7 @@ export class CabinetScene {
   private cellProxies: THREE.Mesh[] = [];
   private shelfTargets: THREE.Mesh[] = [];
   private ghostMat: THREE.MeshBasicMaterial;
+  private toonMatSelected: THREE.MeshToonMaterial;
   private toonMat: THREE.MeshToonMaterial;
   private toonMatHdf: THREE.MeshToonMaterial;
   private edgeMat: THREE.LineBasicMaterial;
@@ -64,6 +65,11 @@ export class CabinetScene {
     });
     this.toonMatHdf = new THREE.MeshToonMaterial({
       color: 0xe8e4dc,
+      gradientMap: gradTex,
+    });
+    // Geselecteerde plank (bewerken in de indelingseditor).
+    this.toonMatSelected = new THREE.MeshToonMaterial({
+      color: 0x93c5fd,
       gradientMap: gradTex,
     });
     this.edgeMat = new THREE.LineBasicMaterial({
@@ -170,7 +176,7 @@ export class CabinetScene {
     return { geo, centered: false };
   }
 
-  updateModel(model: CabinetModel) {
+  updateModel(model: CabinetModel, selectedShelfKey: string | null = null) {
     if (this.cabinetGroup) {
       this.scene.remove(this.cabinetGroup);
       this.cabinetGroup.traverse((obj) => {
@@ -195,7 +201,12 @@ export class CabinetScene {
 
     for (const p of model.panels) {
       const { geo, centered } = this.panelGeometry(p);
-      const mat = p.material === "hdf4" ? this.toonMatHdf : this.toonMat;
+      const mat =
+        p.shelfKey && p.shelfKey === selectedShelfKey
+          ? this.toonMatSelected
+          : p.material === "hdf4"
+            ? this.toonMatHdf
+            : this.toonMat;
       const mesh = new THREE.Mesh(geo, mat);
       if (centered) {
         mesh.position.set(

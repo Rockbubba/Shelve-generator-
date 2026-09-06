@@ -475,6 +475,43 @@ describe("speelse indeling: planken weglaten", () => {
   });
 });
 
+describe("vakhoogtes per kolom (plankverschuiving)", () => {
+  it("verschuift plank en bijbehorende dado's in één kolom, andere kolommen niet", () => {
+    const base = buildCabinetModel(ACCEPT);
+    const model = buildCabinetModel({ ...ACCEPT, shelfOffsets: { "0:1:2": 80 } });
+    const plankOf = (mdl: typeof base, key: string) =>
+      mdl.panels.find((p) => p.shelfKey === key)!;
+    expect(plankOf(model, "0:1:2").place.y).toBeCloseTo(plankOf(base, "0:1:2").place.y + 80, 1);
+    // Buurkolom ongewijzigd.
+    expect(plankOf(model, "0:2:2").place.y).toBeCloseTo(plankOf(base, "0:2:2").place.y, 1);
+
+    // Dado in S2 (zijde A = kolom 1) volgt de plank; zijde B (kolom 0) niet.
+    const s2 = model.panels.find((p) => p.id === "S2")!;
+    const dadoXs = (side: "A" | "B") =>
+      s2.ops
+        .filter((o): o is RectOp => o.kind === "rect" && o.layer === "DADO_7MM" && o.side === side)
+        .map((o) => Math.round(o.x * 10) / 10)
+        .sort((a, b) => a - b);
+    const plankY = Math.round(plankOf(model, "0:1:2").place.y * 10) / 10;
+    expect(dadoXs("A")).toContain(plankY);
+    expect(dadoXs("B")).not.toContain(plankY);
+
+    // Vakken in kolom 1 veranderen mee van hoogte; som blijft gelijk.
+    const col1 = model.cells.filter((c) => c.col === 1).sort((a, b) => a.row - b.row);
+    const col1Base = base.cells.filter((c) => c.col === 1).sort((a, b) => a.row - b.row);
+    expect(col1[1].h).toBeCloseTo(col1Base[1].h + 80, 1);
+    expect(col1[2].h).toBeCloseTo(col1Base[2].h - 80, 1);
+  });
+
+  it("begrenst de verschuiving op de minimale vakhoogte", () => {
+    const model = buildCabinetModel({ ...ACCEPT, shelfOffsets: { "0:0:1": 5000 } });
+    const col0 = model.cells.filter((c) => c.col === 0);
+    for (const c of col0) expect(c.h).toBeGreaterThanOrEqual(120 - 0.1);
+    // Nesting blijft foutloos (planklengtes ongewijzigd).
+    expect(nestPanels(model.panels, ACCEPT.depth).errors).toHaveLength(0);
+  });
+});
+
 describe("voorkantprofiel", () => {
   it("golf: staanders krijgen eigen diepte, planken een gebogen contour binnen de strook", () => {
     const model = buildCabinetModel({

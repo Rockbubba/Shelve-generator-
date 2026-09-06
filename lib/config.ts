@@ -212,6 +212,12 @@ export interface CabinetConfig {
    * De vakken boven en onder de weggelaten plank versmelten tot één vak.
    */
   omittedShelves: Record<string, true>;
+  /**
+   * Verschuiving (mm, + = omhoog) van een tussenplank t.o.v. het grid,
+   * key = `${module}:${col}:${level}`. Zo krijgt elke kolom eigen
+   * vakhoogtes; het model begrenst op MIN_CELL_HEIGHT.
+   */
+  shelfOffsets: Record<string, number>;
   frontProfile: FrontProfile;
 }
 
@@ -232,6 +238,7 @@ export const DEFAULT_CONFIG: CabinetConfig = {
   cellFills: {},
   wallMount: true,
   omittedShelves: {},
+  shelfOffsets: {},
   frontProfile: { type: "recht", amplitude: 60, periodes: 2 },
 };
 
