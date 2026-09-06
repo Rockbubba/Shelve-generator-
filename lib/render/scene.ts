@@ -50,15 +50,17 @@ export class CabinetScene {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0xffffff);
 
-    // 2-staps toon gradient via canvas.
+    // 3-staps toon gradient via canvas: schaduwzijde, middentoon, licht.
+    // Niet te donker, zodat de binnenkant van de vakken leesbaar grijs blijft
+    // in plaats van zwart.
     const gradCanvas = document.createElement("canvas");
-    gradCanvas.width = 2;
+    gradCanvas.width = 3;
     gradCanvas.height = 1;
     const gCtx = gradCanvas.getContext("2d")!;
-    gCtx.fillStyle = "#383838";
-    gCtx.fillRect(0, 0, 1, 1);
-    gCtx.fillStyle = "#ffffff";
-    gCtx.fillRect(1, 0, 1, 1);
+    for (const [i, c] of ["#8a8a8a", "#c9c9c9", "#ffffff"].entries()) {
+      gCtx.fillStyle = c;
+      gCtx.fillRect(i, 0, 1, 1);
+    }
     const gradTex = new THREE.CanvasTexture(gradCanvas);
     gradTex.minFilter = THREE.NearestFilter;
     gradTex.magFilter = THREE.NearestFilter;
@@ -98,18 +100,25 @@ export class CabinetScene {
       depthWrite: false,
     });
 
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.3));
-    this.dirLight = new THREE.DirectionalLight(0xffffff, 1.3);
-    this.dirLight.position.set(-600, 1875, -300);
+    // Zacht vullicht (lucht/vloer) + één schaduwwerpende zon van voren-boven,
+    // iets van links, zodat de vakken van voren worden ingelicht en de
+    // schaduw naar rechtsachter valt.
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.45));
+    this.scene.add(new THREE.HemisphereLight(0xffffff, 0xcfcfcf, 0.4));
+    this.dirLight = new THREE.DirectionalLight(0xffffff, 1.1);
+    this.dirLight.position.set(-900, 2600, -1900);
     this.dirLight.castShadow = true;
-    this.dirLight.shadow.mapSize.set(2048, 2048);
-    this.dirLight.shadow.bias = -0.003;
-    this.dirLight.shadow.normalBias = 0.02;
+    this.dirLight.shadow.mapSize.set(4096, 4096);
+    // Scene staat in mm: bias in wereldeenheden, dus enkele mm normal-bias
+    // tegen schaduw-acne op vlakken die evenwijdig aan het licht staan.
+    this.dirLight.shadow.bias = -0.0002;
+    this.dirLight.shadow.normalBias = 3;
+    this.dirLight.shadow.radius = 2;
     this.scene.add(this.dirLight);
 
     this.ground = new THREE.Mesh(
       new THREE.PlaneGeometry(20000, 20000),
-      new THREE.ShadowMaterial({ opacity: 0.12 }),
+      new THREE.ShadowMaterial({ opacity: 0.16 }),
     );
     this.ground.rotation.x = -Math.PI / 2;
     this.ground.receiveShadow = true;
@@ -363,19 +372,22 @@ export class CabinetScene {
     this.scene.add(group);
     this.cabinetGroup = group;
 
-    // Schaduwcamera en camera-afstand op de kastmaat afstemmen.
+    // Schaduwcamera strak om de kast (incl. slagschaduw op de vloer) zodat
+    // de 4096-map maximale resolutie geeft; camera-afstand op de kastmaat.
     const maxDim = Math.max(W, H, D);
-    const s = maxDim * 1.2;
+    const s = Math.max(W, H) * 0.8 + D;
     const cam = this.dirLight.shadow.camera as THREE.OrthographicCamera;
     cam.left = -s;
     cam.right = s;
     cam.top = s;
     cam.bottom = -s;
     cam.near = 100;
-    cam.far = 8000;
+    cam.far = 12000;
     cam.updateProjectionMatrix();
     this.dirLight.target.position.set(0, H / 2, 0);
     this.scene.add(this.dirLight.target);
+    // Lichtafstand meeschalen zodat de zon altijd buiten de kast staat.
+    this.dirLight.position.set(-0.45 * maxDim - 300, 1.3 * maxDim + 800, -0.95 * maxDim - 600);
 
     if (Math.abs(maxDim - this.lastMaxDim) / (this.lastMaxDim || 1) > 0.2) {
       const dist = maxDim * 2.65;
