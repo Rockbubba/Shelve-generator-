@@ -1,0 +1,35 @@
+name: vault
+
+on:
+  push:
+    branches: [main]
+    paths: ["vault/**", ".github/workflows/vault.yml"]
+  pull_request:
+    paths: ["vault/**", ".github/workflows/vault.yml"]
+
+jobs:
+  ledger:
+    name: ledger schema
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 vault/scripts/audit.py --schema
+
+  door:
+    name: build, audit, crew tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lean toolchain, Mathlib cache, build
+        uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: vault
+          use-mathlib-cache: true
+          auto-config: false
+          build: true
+      - name: Audit every ledger claim against Lean
+        working-directory: vault
+        run: scripts/check.sh
+      - name: Crew runner regression (scripted provider, no keys)
+        working-directory: vault
+        run: crew/test_crew.sh

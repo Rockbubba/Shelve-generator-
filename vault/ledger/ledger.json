@@ -1,0 +1,202 @@
+{
+  "version": 1,
+  "rules": [
+    "Lean is the only judge. A ledger status is a claim; scripts/audit.py checks every claim against the compiled code and fails on any mismatch.",
+    "verified = the declaration builds and depends on no axiom outside propext, Classical.choice, Quot.sound.",
+    "open = the declaration builds but its proof (or a proof it depends on) still uses sorry.",
+    "unformalized = there is no Lean declaration yet; the statement exists only in prose. Nothing in this state can be verified.",
+    "Adding an `axiom` to any file under Vault/ is a cheat, not a proof. The audit rejects it.",
+    "Every Lean file under Vault/ must be imported from Vault.lean or it is never built.",
+    "Every entry with `toward` carries a circularity verdict. `independent` means it is strictly weaker than the target it serves, and says why; `equivalent` means it is that target in disguise; `unassessed` means nobody has checked. Lean cannot catch a lemma that merely relocates the difficulty, so the crew runner refuses anything but `independent`."
+  ],
+  "entries": [
+    {
+      "id": "practice.infinitely_many_primes",
+      "kind": "practice",
+      "title": "Infinitely many primes",
+      "status": "verified",
+      "lean_decl": "Vault.Practice.infinitely_many_primes",
+      "lean_file": "Vault/Practice/Warmup.lean",
+      "statement": "For every natural number n there is a prime p with n <= p.",
+      "proposed_by": "Euclid",
+      "attacked_by": [],
+      "depends_on": [],
+      "notes": "Canary entry. It must always audit as verified. If it does not, the door is broken.",
+      "references": [
+        "Elements, Book IX, Proposition 20"
+      ]
+    },
+    {
+      "id": "practice.stage1_sum_first_odd",
+      "kind": "practice",
+      "title": "Sum of the first n odd numbers",
+      "status": "open",
+      "lean_decl": "Vault.Practice.sum_first_odd",
+      "lean_file": "Vault/Practice/Stage1.lean",
+      "statement": "For every natural number n, the sum over i < n of (2i + 1) equals n^2.",
+      "proposed_by": "vault (stage-one practice target)",
+      "attacked_by": [],
+      "depends_on": [],
+      "notes": "Shipped open on purpose. First job for the crew runner: provable from Mathlib by induction in a few lines. Close it with `crew/run.py practice.stage1_sum_first_odd`.",
+      "references": []
+    },
+    {
+      "id": "target.riemann",
+      "kind": "target",
+      "title": "Riemann Hypothesis",
+      "status": "open",
+      "lean_decl": "Vault.Targets.riemann_hypothesis",
+      "lean_file": "Vault/Targets/Riemann.lean",
+      "statement": "Every nontrivial zero of the Riemann zeta function has real part 1/2. Mathlib states this as `RiemannHypothesis`.",
+      "proposed_by": "Riemann (1859)",
+      "attacked_by": [],
+      "depends_on": [],
+      "notes": "The only Millennium problem whose full statement already exists in Mathlib, which makes it the natural first formal target. Known: zeros are in the critical strip; a positive proportion lie on the line (Selberg, Levinson, Conrey); numerically verified for the first ~10^13 zeros.",
+      "references": [
+        "https://www.claymath.org/millennium/riemann-hypothesis/"
+      ]
+    },
+    {
+      "id": "lemma.riemann.no_zeros_re_le_zero",
+      "kind": "lemma",
+      "title": "Zeta has only trivial zeros for Re s <= 0",
+      "status": "open",
+      "lean_decl": "Vault.Lemmas.riemannZeta_ne_zero_of_re_le_zero",
+      "lean_file": "Vault/Lemmas/ZetaCriticalStrip.lean",
+      "statement": "If Re s <= 0 and s is not -2(n+1) for any natural n, then zeta(s) != 0.",
+      "proposed_by": "vault (stage-two target)",
+      "attacked_by": [],
+      "depends_on": [],
+      "toward": "target.riemann",
+      "circularity": {
+        "verdict": "independent",
+        "argument": "Strictly weaker than RH and provable without it. The statement constrains zeros in the half-plane re s <= 0, which RH says nothing new about: RH is a claim about the strip. The proof route in the notes uses only `riemannZeta_one_sub` and `riemannZeta_ne_zero_of_one_le_re`, both already in Mathlib and both proved without RH. A pre-RH proof exists in the literature (Titchmarsh ch. 2), so the lemma cannot encode it.",
+        "assessed_by": "vault (stage-two review)",
+        "assessed_at": "2026-09-06"
+      },
+      "notes": "Classical, not in Mathlib as of v4.33.1. Sketch: apply `riemannZeta_one_sub` at 1 - s (hypotheses hold since Re(1 - s) >= 1, so 1 - s is never -n and never 1 unless s = 0, where `riemannZeta_zero` gives -1/2). Then zeta(s) = 2 (2 pi)^(-(1-s)) Gamma(1-s) cos(pi (1-s)/2) zeta(1-s). Each factor is nonzero: `riemannZeta_ne_zero_of_one_le_re` for zeta(1-s), `Complex.Gamma_ne_zero` since 1 - s is not a non-positive integer, `Complex.cos_eq_zero_iff` shows the cosine vanishes only when s is an even integer <= 0, which the hypothesis excludes (s = 0 handled separately).",
+      "references": [
+        "Titchmarsh, The Theory of the Riemann Zeta-Function, ch. 2"
+      ]
+    },
+    {
+      "id": "lemma.riemann.critical_strip",
+      "kind": "lemma",
+      "title": "Nontrivial zeros lie in the open critical strip",
+      "status": "open",
+      "lean_decl": "Vault.Lemmas.re_mem_Ioo_of_riemannZeta_eq_zero",
+      "lean_file": "Vault/Lemmas/ZetaCriticalStrip.lean",
+      "statement": "If zeta(s) = 0 and s is not a trivial zero, then 0 < Re s < 1.",
+      "proposed_by": "vault (stage-two target)",
+      "attacked_by": [],
+      "depends_on": [
+        "lemma.riemann.no_zeros_re_le_zero"
+      ],
+      "toward": "target.riemann",
+      "circularity": {
+        "verdict": "independent",
+        "argument": "This is the classical zero-free region, known since Hadamard and de la Vallee Poussin (1896) and used in the prime number theorem, which does not assume RH. RH is strictly stronger: this lemma delivers the open strip 0 < re s < 1, RH pins re s = 1/2 inside it. Proving the strip therefore cannot prove RH, and the converse implication is trivial.",
+        "assessed_by": "vault (stage-two review)",
+        "assessed_at": "2026-09-06"
+      },
+      "notes": "Corollary: `riemannZeta_ne_zero_of_one_le_re` rules out Re s >= 1, the previous lemma rules out Re s <= 0.",
+      "references": []
+    },
+    {
+      "id": "target.p_vs_np",
+      "kind": "target",
+      "title": "P versus NP",
+      "status": "unformalized",
+      "lean_decl": null,
+      "lean_file": null,
+      "statement": "Is every decision problem whose solutions can be verified in polynomial time also solvable in polynomial time?",
+      "proposed_by": "Cook (1971), Levin (1973)",
+      "attacked_by": [],
+      "depends_on": [],
+      "notes": "Mathlib has no complexity classes. Formalizing the statement (Turing machines or a circuit model, P, NP) is itself a lemma-sized project and must come first. Known barriers any proposal must get past: relativization (Baker-Gill-Solovay), natural proofs (Razborov-Rudich), algebrization (Aaronson-Wigderson).",
+      "references": [
+        "https://www.claymath.org/millennium/p-vs-np/"
+      ]
+    },
+    {
+      "id": "target.navier_stokes",
+      "kind": "target",
+      "title": "Navier-Stokes existence and smoothness",
+      "status": "unformalized",
+      "lean_decl": null,
+      "lean_file": null,
+      "statement": "For smooth, finite-energy initial data in three dimensions, do the incompressible Navier-Stokes equations have a globally defined smooth solution (or a counterexample)?",
+      "proposed_by": "Clay official statement by Fefferman",
+      "attacked_by": [],
+      "depends_on": [],
+      "notes": "Mathlib has Sobolev-adjacent analysis but no PDE well-posedness theory at this level. Formal statement needs function spaces and weak/strong solution definitions first.",
+      "references": [
+        "https://www.claymath.org/millennium/navier-stokes-equation/"
+      ]
+    },
+    {
+      "id": "target.yang_mills",
+      "kind": "target",
+      "title": "Yang-Mills existence and mass gap",
+      "status": "unformalized",
+      "lean_decl": null,
+      "lean_file": null,
+      "statement": "Prove that quantum Yang-Mills theory on R^4 exists for any compact simple gauge group and has a mass gap Delta > 0.",
+      "proposed_by": "Clay official statement by Jaffe and Witten",
+      "attacked_by": [],
+      "depends_on": [],
+      "notes": "The statement depends on a rigorous definition of a quantum field theory (Wightman or Osterwalder-Schrader axioms) that Mathlib does not have. Furthest from formalizable of the seven.",
+      "references": [
+        "https://www.claymath.org/millennium/yang-mills-the-maths-gap/"
+      ]
+    },
+    {
+      "id": "target.bsd",
+      "kind": "target",
+      "title": "Birch and Swinnerton-Dyer conjecture",
+      "status": "unformalized",
+      "lean_decl": null,
+      "lean_file": null,
+      "statement": "The rank of the Mordell-Weil group of an elliptic curve over Q equals the order of vanishing of its L-function at s = 1.",
+      "proposed_by": "Birch, Swinnerton-Dyer (1965)",
+      "attacked_by": [],
+      "depends_on": [],
+      "notes": "Mathlib has elliptic curves and Mordell-Weil group structure, and general L-series machinery, but not the L-function of an elliptic curve with analytic continuation. Formalizing the statement is the first lemma.",
+      "references": [
+        "https://www.claymath.org/millennium/birch-and-swinnerton-dyer-conjecture/"
+      ]
+    },
+    {
+      "id": "target.hodge",
+      "kind": "target",
+      "title": "Hodge conjecture",
+      "status": "unformalized",
+      "lean_decl": null,
+      "lean_file": null,
+      "statement": "On a projective complex manifold, every rational (p,p) cohomology class is a rational linear combination of classes of algebraic cycles.",
+      "proposed_by": "Hodge (1950)",
+      "attacked_by": [],
+      "depends_on": [],
+      "notes": "Requires Hodge theory and algebraic cycles, neither of which is in Mathlib.",
+      "references": [
+        "https://www.claymath.org/millennium/hodge-conjecture/"
+      ]
+    },
+    {
+      "id": "target.poincare",
+      "kind": "target",
+      "title": "Poincare conjecture (dry run)",
+      "status": "unformalized",
+      "lean_decl": null,
+      "lean_file": null,
+      "statement": "Every simply connected closed 3-manifold is homeomorphic to the 3-sphere.",
+      "proposed_by": "Poincare (1904)",
+      "attacked_by": [],
+      "depends_on": [],
+      "notes": "Solved by Perelman (2002-2003, prize declined 2010). Kept as a dry-run target: the answer is known, so it measures whether the pipeline can find and formalize a known proof. Mathlib has no 3-manifold theory, so the statement is unformalized.",
+      "references": [
+        "https://www.claymath.org/millennium/poincare-conjecture/"
+      ]
+    }
+  ]
+}

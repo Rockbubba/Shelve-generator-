@@ -1,0 +1,11 @@
+name = "vault"
+version = "0.1.0"
+defaultTargets = ["Vault"]
+
+[[lean_lib]]
+name = "Vault"
+
+[[require]]
+name = "mathlib"
+scope = "leanprover-community"
+rev = "v4.33.1"
