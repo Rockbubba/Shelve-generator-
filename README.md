@@ -122,6 +122,27 @@ De nesting-preview in de UI tekent alle bewerkingen mee (gestippeld =
 tweede zijde), zodat je vóór het downloaden kunt controleren of dado's en
 boringen op de juiste plek zitten.
 
+### Materiaal, Cabineo-maat en kosten
+
+- **Materiaal**: MDF, multiplex berken, spaanplaat (melamine) en HPL/compact,
+  elk met eigen leverbare diktes (`SHEET_MATERIALS` in `lib/config.ts`).
+  De gemeten plaatdikte blijft apart instelbaar (±1,5 mm rond de nominale
+  dikte) en stuurt de dado-breedte. HPL schakelt automatisch naar
+  Ø5,5-boutgaten voor Cabineo (laag `BOOR_5_5MM_…`), conform Lamello.
+- **Cabineo 8 of 12**: zelfde pocket, andere schroefdiepte (8 resp. 12 mm)
+  en minimale plaatdikte (16 resp. 19 mm); de validatie waarschuwt bij een
+  te dunne plaat. Kleinere Cabineo-maten bestaan niet.
+- **Machinetijd & kosten** (`lib/costing.ts`): contourlengtes × passes,
+  uitruimlengte van pockets/groeven (oppervlak / effectieve baanbreedte),
+  boringen en insteltijd per plaat → minuten en bewerkingskosten; plus
+  materiaalkosten zodra een plaatprijs bekend is. De klant ziet alleen
+  tijd en prijzen.
+- **Admin-menu** op `/admin` (niet gelinkt vanuit de klant-UI): machine-
+  parameters (voeding, snededieptes, frees, boortijden, insteltijd,
+  uurtarief), plaatprijzen per materiaal × dikte en een schakelaar om het
+  kostenblok te tonen. Opslag in localStorage van het apparaat — geen
+  echte beveiliging; voor een publieke omgeving hoort hier een login voor.
+
 ### Datamodel v2-klaar
 
 Elk vak heeft een `fill`-property (`open | rug | deur | lade | diagonaal`),

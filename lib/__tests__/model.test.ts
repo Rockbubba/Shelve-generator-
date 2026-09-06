@@ -17,6 +17,7 @@ import {
 } from "../model";
 import { nestPanels } from "../nesting";
 import { panelContour, sheetToDxf } from "../dxf";
+import { estimateMachining, MACHINE } from "../costing";
 
 /** Acceptatiekast: 1800 × 2000 × ~398, 4 kolommen × 5 rijen. */
 const ACCEPT: CabinetConfig = {
@@ -380,6 +381,64 @@ describe("eigen kastdiepte", () => {
   it("waarschuwt wanneer de diepte te klein is voor cabineo", () => {
     const model = buildCabinetModel({ ...ACCEPT, depth: 130, joinery: "cabineo" });
     expect(model.warnings.some((w) => w.includes("Cabineo"))).toBe(true);
+  });
+});
+
+describe("materiaal, cabineo-maat en kosten", () => {
+  it("cabineo 12 boort 12 mm diep; dikke plaat geeft geen waarschuwing", () => {
+    const model = buildCabinetModel({
+      ...ACCEPT,
+      joinery: "cabineo",
+      cabineoSize: 12,
+      materialId: "multiplex",
+      nominalThickness: 21,
+      thickness: 21,
+    });
+    const nesting = nestPanels(model.panels, ACCEPT.depth);
+    const all = nesting.sheets.map((s) => sheetToDxf(s)).join("\n");
+    expect(all).toContain("BOOR_5MM_D12");
+    expect(model.warnings.some((w) => w.includes("Cabineo 12"))).toBe(false);
+    expect(model.hardware.some((h) => h.name === "Lamello Cabineo 12")).toBe(true);
+  });
+
+  it("cabineo 12 op 18 mm plaat waarschuwt", () => {
+    const model = buildCabinetModel({
+      ...ACCEPT,
+      joinery: "cabineo",
+      cabineoSize: 12,
+    });
+    expect(model.warnings.some((w) => w.includes("Cabineo 12"))).toBe(true);
+  });
+
+  it("hpl gebruikt Ø5,5-boutgaten (eigen laag)", () => {
+    const model = buildCabinetModel({
+      ...ACCEPT,
+      joinery: "cabineo",
+      materialId: "hpl",
+    });
+    const staander = model.panels.find((p) => p.id === "S2")!;
+    const holes = staander.ops.filter(
+      (op): op is CircleOp => op.kind === "circle",
+    );
+    expect(holes.every((h) => h.layer === "BOOR_5_5MM")).toBe(true);
+    expect(holes.every((h) => Math.abs(h.diameter - 5.5) < 0.01)).toBe(true);
+  });
+
+  it("machinetijd-schatting geeft plausibele waardes en rekent prijzen mee", () => {
+    const model = buildCabinetModel(ACCEPT);
+    const nesting = nestPanels(model.panels, ACCEPT.depth);
+    const est = estimateMachining(model, nesting, MACHINE, 50);
+    expect(est.minutes).toBeGreaterThan(10);
+    expect(est.minutes).toBeLessThan(600);
+    expect(est.contourMeters).toBeGreaterThan(10);
+    expect(est.drillCount).toBeGreaterThan(0);
+    expect(est.materialCost).toBe(nesting.sheets.length * 50);
+    expect(est.totalCost).toBeCloseTo(est.machineCost + est.materialCost!, 1);
+
+    // Zonder prijs: geen materiaal-/totaalprijs, wel machinetijd.
+    const zonder = estimateMachining(model, nesting);
+    expect(zonder.materialCost).toBeUndefined();
+    expect(zonder.totalCost).toBeUndefined();
   });
 });
 

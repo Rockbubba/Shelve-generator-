@@ -43,10 +43,18 @@ export const CABINEO_POCKET_DEPTH = 11;
 export const CABINEO_HOLE_DIAMETER = 15;
 export const CABINEO_HOLE_CENTERS = [3.6, 14.8, 26]; // vanaf de naadrand
 export const CABINEO_FLAT_HALF_WIDTH = 6; // brugjes-halfbreedte bij frees12
-// Zijkant (staander): boor Ø5 (HPL: Ø5,5), diepte 8 mm bij Cabineo 8
-// (zwarte schroef); 12 mm bij Cabineo 12.
+// Zijkant (staander): boor Ø5 (HPL: Ø5,5), diepte = de maat van de
+// Cabineo: 8 mm bij Cabineo 8 (zwarte schroef), 12 mm bij Cabineo 12
+// (vernikkelde schroef, voor dikkere platen). De pocket (3 × Ø15, 11 mm)
+// is voor beide maten identiek.
+export type CabineoSize = 8 | 12;
 export const CABINEO_BOLT_DIAMETER = 5;
-export const CABINEO_SIDE_HOLE_DEPTH = 8;
+export const CABINEO_BOLT_DIAMETER_HPL = 5.5;
+/** Minimale plaatdikte per Cabineo-maat (Lamello: 8 vanaf 16 mm, 12 vanaf 19 mm). */
+export const CABINEO_MIN_THICKNESS: Record<CabineoSize, number> = {
+  8: 16,
+  12: 19,
+};
 export const CABINEOS_PER_JOINT = 2;
 /**
  * Afstand van de Cabineo's tot de voor-/achterrand, per staanderzijde
@@ -84,6 +92,42 @@ export const MIN_CELL_HEIGHT = 120;
 // Breedte-snapping: maximale stille aanpassing van de gevraagde kastbreedte.
 export const WIDTH_SNAP_TOLERANCE = 12;
 
+// ---- Plaatmaterialen --------------------------------------------------------
+
+/**
+ * Beschikbare plaatmaterialen met hun leverbare diktes. Prijzen per plaat
+ * per dikte kunnen hier later worden ingevuld (EUR per plaat 2440 × 1220);
+ * zodra een prijs bekend is rekent de UI de materiaalkosten live mee.
+ */
+export interface SheetMaterial {
+  id: string;
+  naam: string;
+  diktes: number[];
+  /** Prijs per hele plaat, per dikte (mm → EUR). Nog in te vullen. */
+  prijsPerPlaat?: Partial<Record<number, number>>;
+  /** HPL: Cabineo-boutgat Ø5,5 i.p.v. Ø5 (officiële Lamello-voorschrift). */
+  hpl?: boolean;
+}
+
+export const SHEET_MATERIALS: SheetMaterial[] = [
+  { id: "mdf", naam: "MDF", diktes: [12, 15, 18, 19, 22, 25] },
+  { id: "multiplex", naam: "Multiplex berken", diktes: [12, 15, 18, 21, 24] },
+  { id: "spaanplaat", naam: "Spaanplaat (melamine)", diktes: [18, 25] },
+  { id: "hpl", naam: "HPL / compact", diktes: [10, 12, 13], hpl: true },
+];
+
+export function materialById(id: string): SheetMaterial {
+  return SHEET_MATERIALS.find((m) => m.id === id) ?? SHEET_MATERIALS[0];
+}
+
+/** Prijs per plaat voor materiaal + dikte, of undefined zolang niet ingevuld. */
+export function sheetPriceFor(
+  materialId: string,
+  dikte: number,
+): number | undefined {
+  return materialById(materialId).prijsPerPlaat?.[dikte];
+}
+
 // ---- Types ------------------------------------------------------------------
 
 export type Joinery = "dado" | "cabineo";
@@ -113,8 +157,14 @@ export interface CabinetConfig {
   joinery: Joinery;
   /** Plaatsingsvariant van de Cabineo-pocket (boor Ø15 / frees Ø10 / frees Ø12). */
   cabineoVariant: CabineoVariant;
+  /** Cabineo-maat: 8 (plaat ≥ 16 mm) of 12 (plaat ≥ 19 mm, sterkere schroef). */
+  cabineoSize: CabineoSize;
   base: BaseType;
   rugMount: RugMount;
+  /** Plaatmateriaal (id uit SHEET_MATERIALS). */
+  materialId: string;
+  /** Gekozen nominale plaatdikte (voor BOM en prijzen). */
+  nominalThickness: number;
   /** Gemeten plaatdikte (nominaal 18, bv. 17.8 gemeten). */
   thickness: number;
   /**
@@ -134,8 +184,11 @@ export const DEFAULT_CONFIG: CabinetConfig = {
   rows: 5,
   joinery: "dado",
   cabineoVariant: "frees10", // onze freesbaan is Ø8 → variant "Ø10 of kleiner"
+  cabineoSize: 8,
   base: "plint",
   rugMount: "geschroefd",
+  materialId: "mdf",
+  nominalThickness: 18,
   thickness: 18,
   cellFills: {},
   wallMount: true,

@@ -19,14 +19,16 @@ import {
   DADO_FRONT_STOP,
   DOWEL_DIAMETER,
   CABINEO_BOLT_DIAMETER,
+  CABINEO_BOLT_DIAMETER_HPL,
   cabineoEdgeOffsets,
   CABINEO_FLAT_HALF_WIDTH,
   CABINEO_HOLE_CENTERS,
   CABINEO_HOLE_DIAMETER,
+  CABINEO_MIN_THICKNESS,
   CABINEO_POCKET_DEPTH,
-  CABINEO_SIDE_HOLE_DEPTH,
   CABINEOS_PER_JOINT,
   CabineoVariant,
+  materialById,
   HDF_THICKNESS,
   KERF,
   MAX_MODULE_HEIGHT,
@@ -54,6 +56,7 @@ export type Layer =
   | "DADO_7MM"
   | "BOOR_8MM"
   | "BOOR_5MM"
+  | "BOOR_5_5MM"
   | "BOOR_15MM"
   | "CABINEO_11MM"
   | "RUG_SPONNING"
@@ -347,6 +350,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
   const cellW = snap.cellWidth;
   const shelfLen = snap.shelfPartLength;
   const cabOff = cabineoEdgeOffsets(D);
+  const hplMaterial = materialById(config.materialId).hpl === true;
 
   // Modules: hoger dan MAX_MODULE_HEIGHT wordt gestapeld.
   const moduleCount = Math.max(1, Math.ceil(config.height / MAX_MODULE_HEIGHT));
@@ -458,12 +462,15 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
               const cy = k === 0 ? edge : D - edge;
               ops.push({
                 kind: "circle",
-                layer: "BOOR_5MM",
+                layer: hplMaterial ? "BOOR_5_5MM" : "BOOR_5MM",
                 side: isOuter ? side : "A",
                 cx: levelY[j] + t / 2,
                 cy,
-                diameter: CABINEO_BOLT_DIAMETER,
-                depth: isOuter ? CABINEO_SIDE_HOLE_DEPTH : t,
+                diameter: hplMaterial
+                  ? CABINEO_BOLT_DIAMETER_HPL
+                  : CABINEO_BOLT_DIAMETER,
+                // Boordiepte = Cabineo-maat (8 of 12 mm, officiële X-maat).
+                depth: isOuter ? config.cabineoSize : t,
                 through: !isOuter,
               });
             }
@@ -720,7 +727,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
     hardware.push({ name: "Houtlijm (D3)", qty: 1, unit: "fles" });
   } else {
     hardware.push({
-      name: "Lamello Cabineo 8",
+      name: `Lamello Cabineo ${config.cabineoSize}`,
       qty: cabineoJoints * CABINEOS_PER_JOINT,
       unit: "stuks",
     });
@@ -761,6 +768,16 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
     if (p.material === "plaat18" && p.width > D + 0.01 && p.type !== "plint") {
       warnings.push(`Onderdeel ${p.id} is breder dan de kastdiepte.`);
     }
+  }
+  if (joinery === "cabineo" && t < CABINEO_MIN_THICKNESS[config.cabineoSize]) {
+    warnings.push(
+      `Cabineo ${config.cabineoSize} vraagt een plaatdikte vanaf ${CABINEO_MIN_THICKNESS[config.cabineoSize]} mm (nu ${t} mm) — kies een dikkere plaat of een kleinere Cabineo-maat.`,
+    );
+  }
+  if (joinery === "dado" && t < 16) {
+    warnings.push(
+      `Plaatdikte ${t} mm is te dun voor de blinde dado met deuvelboring (15 mm diep in de dadobodem) — gebruik minimaal 16 mm of kies Cabineo.`,
+    );
   }
   if (joinery === "cabineo" && cabOff.b - cabOff.a < 20) {
     warnings.push(

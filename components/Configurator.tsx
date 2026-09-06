@@ -11,9 +11,13 @@ import {
   MIN_DEPTH,
   MIN_HEIGHT,
   MIN_WIDTH,
+  SHEET_MATERIALS,
   formatMm,
+  materialById,
   stripsPerSheetForDepth,
 } from "@/lib/config";
+import { costSummaryLines, estimateMachining } from "@/lib/costing";
+import { priceForSheet, useAdminSettings } from "@/lib/settings";
 import { buildCabinetModel, cellFillFor } from "@/lib/model";
 import { nestPanels } from "@/lib/nesting";
 import {
@@ -44,6 +48,19 @@ export default function Configurator() {
     () => nestPanels(model.panels, config.depth),
     [model, config.depth],
   );
+
+  const admin = useAdminSettings();
+  const costs = useMemo(
+    () =>
+      estimateMachining(
+        model,
+        nesting,
+        admin.machine,
+        priceForSheet(admin, config.materialId, config.nominalThickness),
+      ),
+    [model, nesting, admin, config.materialId, config.nominalThickness],
+  );
+  const costLines = useMemo(() => costSummaryLines(model, costs), [model, costs]);
 
   const isCustomDepth = !DEPTH_OPTIONS.some(
     (o) => Math.abs(o.depth - config.depth) < 0.05,
@@ -206,6 +223,48 @@ export default function Configurator() {
             value={config.joinery}
             onChange={(joinery) => update({ joinery })}
           />
+          <Segmented
+            label="Materiaal"
+            options={SHEET_MATERIALS.map((mat) => ({
+              value: mat.id,
+              label: mat.naam.split(" ")[0],
+            }))}
+            value={config.materialId}
+            onChange={(materialId) => {
+              const mat = materialById(materialId);
+              const dikte = mat.diktes.includes(config.nominalThickness)
+                ? config.nominalThickness
+                : mat.diktes.reduce((best, d) =>
+                    Math.abs(d - config.nominalThickness) <
+                    Math.abs(best - config.nominalThickness)
+                      ? d
+                      : best,
+                  );
+              update({ materialId, nominalThickness: dikte, thickness: dikte });
+            }}
+          />
+          <Segmented
+            label="Plaatdikte"
+            options={materialById(config.materialId).diktes.map((d) => ({
+              value: d,
+              label: `${d} mm`,
+            }))}
+            value={config.nominalThickness}
+            onChange={(nominalThickness) =>
+              update({ nominalThickness, thickness: nominalThickness })
+            }
+          />
+          {config.joinery === "cabineo" && (
+            <Segmented
+              label="Cabineo-maat"
+              options={[
+                { value: 8, label: "Cabineo 8", sub: "plaat ≥ 16 mm" },
+                { value: 12, label: "Cabineo 12", sub: "plaat ≥ 19 mm" },
+              ]}
+              value={config.cabineoSize}
+              onChange={(cabineoSize) => update({ cabineoSize })}
+            />
+          )}
           {config.joinery === "cabineo" && (
             <Segmented
               label="Cabineo-bewerking"
@@ -248,8 +307,8 @@ export default function Configurator() {
           <Stepper
             label="Gemeten plaatdikte"
             value={config.thickness}
-            min={16}
-            max={20}
+            min={config.nominalThickness - 1.5}
+            max={config.nominalThickness + 1.5}
             step={0.1}
             onChange={(thickness) =>
               update({ thickness: Math.round(thickness * 10) / 10 })
@@ -311,6 +370,16 @@ export default function Configurator() {
               Print / PDF onderdelenlijst
             </button>
           </div>
+          {admin.toonKosten && (
+            <div>
+              <h3 className="mb-2 text-sm font-semibold">Machinetijd & kosten</h3>
+              <ul className="space-y-1 rounded-2xl border border-neutral-200 p-3 text-xs text-neutral-600">
+                {costLines.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           <div>
             <h3 className="mb-2 text-sm font-semibold">Nesting</h3>
             <NestingPreview
@@ -386,6 +455,16 @@ export default function Configurator() {
               {formatMm(config.depth)} mm · {config.columns} × {config.rows} vakken
             </p>
           </div>
+          {admin.toonKosten && (
+            <>
+              <h3 className="mb-2 text-sm font-semibold">Machinetijd & kosten</h3>
+              <ul className="mb-4 space-y-1 rounded-2xl border border-neutral-200 p-3 text-xs text-neutral-600">
+                {costLines.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </>
+          )}
           <h3 className="mb-2 text-sm font-semibold">Nesting</h3>
           <NestingPreview
             nesting={nesting}

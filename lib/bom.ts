@@ -3,7 +3,7 @@
  * met plaatnummers uit de nesting, plus hardware-telling. CSV-export.
  */
 
-import { formatMm } from "./config";
+import { formatMm, materialById } from "./config";
 import { CabinetModel, Panel, PanelType } from "./model";
 import { NestingResult } from "./nesting";
 
@@ -51,6 +51,9 @@ export function buildBom(model: CabinetModel, nesting: NestingResult): BomRow[] 
     groups.set(key, g);
   }
 
+  const materialLabel = `${materialById(model.config.materialId).naam} ${formatMm(
+    model.config.nominalThickness,
+  )} mm`;
   const rows: BomRow[] = [];
   for (const { rowPanels } of groups.values()) {
     const first = rowPanels[0];
@@ -60,7 +63,7 @@ export function buildBom(model: CabinetModel, nesting: NestingResult): BomRow[] 
     rows.push({
       ids: rowPanels.map((p) => p.id),
       type: first.type,
-      material: first.material === "hdf4" ? "HDF 4 mm" : "Plaat 18 mm",
+      material: first.material === "hdf4" ? "HDF 4 mm" : materialLabel,
       length: first.length,
       width: first.width,
       thickness: first.thickness,
