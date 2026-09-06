@@ -26,6 +26,7 @@ ROOT_MODULE = ROOT / "Vault.lean"
 
 STATUSES = {"unformalized", "open", "verified"}
 KINDS = {"practice", "target", "lemma"}
+CIRCULARITY_VERDICTS = {"independent", "equivalent", "unassessed"}
 ALLOWED_AXIOMS = {"propext", "Classical.choice", "Quot.sound"}
 
 AXIOMS_RE = re.compile(r"^'(?P<name>[^']+)' depends on axioms: \[(?P<axioms>[^\]]*)\]")
@@ -45,6 +46,45 @@ def save_ledger(ledger: dict) -> None:
     with LEDGER.open("w") as fh:
         json.dump(ledger, fh, indent=2, ensure_ascii=False)
         fh.write("\n")
+
+
+def check_circularity(eid: str, e: dict) -> list[str]:
+    """An entry that serves a target must say why it is not that target in disguise.
+
+    This is the one cheat Lean cannot catch. A lemma can be true, honestly
+    proved, and still worthless as progress because it is exactly as hard as
+    the thing it serves: the difficulty was moved, not reduced. So every entry
+    with `toward` carries a verdict, and it costs its author one sentence.
+    """
+    if e.get("toward") is None:
+        if "circularity" in e:
+            return [f"{eid}: has a circularity assessment but serves no target (no `toward`)"]
+        return []
+    circ = e.get("circularity")
+    if not isinstance(circ, dict):
+        return [f"{eid}: serves {e['toward']!r}, so it needs a circularity assessment"]
+    v = circ.get("verdict")
+    if v not in CIRCULARITY_VERDICTS:
+        return [f"{eid}: circularity.verdict must be one of {sorted(CIRCULARITY_VERDICTS)}"]
+    if v == "unassessed":
+        return []
+    problems = []
+    if not str(circ.get("argument") or "").strip():
+        problems.append(f"{eid}: circularity verdict {v!r} requires an argument saying why")
+    if not str(circ.get("assessed_by") or "").strip():
+        problems.append(f"{eid}: circularity verdict {v!r} requires assessed_by")
+    return problems
+
+
+def circularity_summary(ledger: dict) -> str:
+    counts: dict[str, int] = {}
+    for e in ledger.get("entries", []):
+        if e.get("toward") is not None:
+            v = (e.get("circularity") or {}).get("verdict", "unassessed")
+            counts[v] = counts.get(v, 0) + 1
+    if not counts:
+        return "no entry serves a target"
+    return ", ".join(f"{counts[v]} {v}" for v in sorted(counts))
 
 
 def check_schema(ledger: dict) -> list[str]:
@@ -78,6 +118,9 @@ def check_schema(ledger: dict) -> list[str]:
         toward = e.get("toward")
         if toward is not None and toward not in known:
             problems.append(f"{eid}: toward unknown id {toward!r}")
+        elif toward == eid:
+            problems.append(f"{eid}: serves itself")
+        problems += check_circularity(eid, e)
     return problems
 
 
@@ -156,6 +199,7 @@ def main(argv: list[str]) -> int:
         return 2
     if schema_only:
         print(f"schema ok: {len(ledger['entries'])} entries")
+        print(f"circularity: {circularity_summary(ledger)}")
         return 0
 
     formal = [e for e in ledger["entries"] if e["lean_decl"]]
@@ -213,7 +257,8 @@ def main(argv: list[str]) -> int:
         for m in mismatches:
             print("  -", m)
         return 1
-    print("\naudit ok")
+    print(f"\ncircularity: {circularity_summary(ledger)}")
+    print("audit ok")
     return 0
 
 

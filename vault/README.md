@@ -39,6 +39,14 @@ vault/
    checked, so the audit refuses to run until it is.
 5. **The canary must stay green.** `practice.infinitely_many_primes` is
    always `verified`. If it is not, the door is broken, not the lemma.
+6. **Every entry that serves a target is assessed for circularity.** This is
+   the one cheat Lean cannot catch: a lemma can be true, honestly proved, and
+   still no progress at all because it is exactly as hard as the thing it
+   serves. So an entry with `toward` carries a `circularity` verdict of
+   `independent` (strictly weaker than its target, with the argument written
+   down), `equivalent` (the target in disguise), or `unassessed` (nobody has
+   looked). The audit rejects a missing verdict; the crew runner refuses to
+   spend rounds on anything but `independent`.
 
 ## Running the door
 
@@ -60,6 +68,11 @@ installs itself on first use.
    declaration name in `lean_decl`, the file in `lean_file`, who proposed it,
    its prerequisites in `depends_on` (other ledger ids it uses), and the
    target it serves in `toward`.
+   Because it names a `toward`, it also needs a `circularity` block: a
+   `verdict`, and for anything but `unassessed` an `argument` saying why the
+   lemma is strictly weaker than the target, plus `assessed_by`. One or two
+   sentences. If the honest answer is that you cannot tell, write
+   `unassessed` and leave it there until someone can.
 3. Run `scripts/check.sh`. It must pass with the entry reported `open`.
 4. When a proof lands, run `scripts/check.sh --sync`. The entry flips to
    `verified` only if Lean agrees, and `verified_at` is stamped.

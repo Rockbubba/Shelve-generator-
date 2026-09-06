@@ -6,7 +6,8 @@
     "open = the declaration builds but its proof (or a proof it depends on) still uses sorry.",
     "unformalized = there is no Lean declaration yet; the statement exists only in prose. Nothing in this state can be verified.",
     "Adding an `axiom` to any file under Vault/ is a cheat, not a proof. The audit rejects it.",
-    "Every Lean file under Vault/ must be imported from Vault.lean or it is never built."
+    "Every Lean file under Vault/ must be imported from Vault.lean or it is never built.",
+    "Every entry with `toward` carries a circularity verdict. `independent` means it is strictly weaker than the target it serves, and says why; `equivalent` means it is that target in disguise; `unassessed` means nobody has checked. Lean cannot catch a lemma that merely relocates the difficulty, so the crew runner refuses anything but `independent`."
   ],
   "entries": [
     {
@@ -67,6 +68,12 @@
       "attacked_by": [],
       "depends_on": [],
       "toward": "target.riemann",
+      "circularity": {
+        "verdict": "independent",
+        "argument": "Strictly weaker than RH and provable without it. The statement constrains zeros in the half-plane re s <= 0, which RH says nothing new about: RH is a claim about the strip. The proof route in the notes uses only `riemannZeta_one_sub` and `riemannZeta_ne_zero_of_one_le_re`, both already in Mathlib and both proved without RH. A pre-RH proof exists in the literature (Titchmarsh ch. 2), so the lemma cannot encode it.",
+        "assessed_by": "vault (stage-two review)",
+        "assessed_at": "2026-09-06"
+      },
       "notes": "Classical, not in Mathlib as of v4.33.1. Sketch: apply `riemannZeta_one_sub` at 1 - s (hypotheses hold since Re(1 - s) >= 1, so 1 - s is never -n and never 1 unless s = 0, where `riemannZeta_zero` gives -1/2). Then zeta(s) = 2 (2 pi)^(-(1-s)) Gamma(1-s) cos(pi (1-s)/2) zeta(1-s). Each factor is nonzero: `riemannZeta_ne_zero_of_one_le_re` for zeta(1-s), `Complex.Gamma_ne_zero` since 1 - s is not a non-positive integer, `Complex.cos_eq_zero_iff` shows the cosine vanishes only when s is an even integer <= 0, which the hypothesis excludes (s = 0 handled separately).",
       "references": [
         "Titchmarsh, The Theory of the Riemann Zeta-Function, ch. 2"
@@ -86,6 +93,12 @@
         "lemma.riemann.no_zeros_re_le_zero"
       ],
       "toward": "target.riemann",
+      "circularity": {
+        "verdict": "independent",
+        "argument": "This is the classical zero-free region, known since Hadamard and de la Vallee Poussin (1896) and used in the prime number theorem, which does not assume RH. RH is strictly stronger: this lemma delivers the open strip 0 < re s < 1, RH pins re s = 1/2 inside it. Proving the strip therefore cannot prove RH, and the converse implication is trivial.",
+        "assessed_by": "vault (stage-two review)",
+        "assessed_at": "2026-09-06"
+      },
       "notes": "Corollary: `riemannZeta_ne_zero_of_one_le_re` rules out Re s >= 1, the previous lemma rules out Re s <= 0.",
       "references": []
     },

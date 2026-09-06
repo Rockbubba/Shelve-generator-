@@ -42,7 +42,7 @@ Rules, enforced mechanically before Lean even runs:
 - The statement of `{decl}` (everything from the `theorem` keyword to `:=`) must stay exactly as given, up to whitespace. Do not weaken, restate, or rename it.
 - No `axiom` declarations. No `sorry`. No `native_decide` tricks that hide work in unchecked code.
 - Keep `import Mathlib` as the only import. Do not reference files that do not exist.
-- You may add helper lemmas above the target in the same file, fully proved.
+- You may add helper lemmas above the target in the same file, fully proved. A helper must be genuinely smaller than the target; if the only route you see is to assume something as strong as what this entry serves, say so in a comment instead of dressing it up as a lemma.
 
 If you cannot finish, still return your best complete file; Lean's errors come back to you next round. Prefer short proofs that lean on Mathlib lemmas over long tactic scripts."""
 
@@ -52,7 +52,8 @@ Check, in order:
 1. Has the target statement been altered, weakened, or had hypotheses added compared with the original?
 2. Is anything smuggled in: an `axiom`, an unsound `instance`, `sorry` hidden in a helper, `native_decide`, `decide` on a goal too large to actually run, or `unsafe` code?
 3. Is the mathematics sound? Point at the specific step that fails and say why.
-4. Would a Mathlib maintainer accept this as a proof of the stated theorem?
+4. Is the difficulty merely relocated? Lean cannot catch this one, so it is yours. If a helper lemma, a definition, or a hypothesis carries the real content and is itself as hard as the entry's target, the proposal is not progress even when it compiles. Name the step and say what it is equivalent to.
+5. Would a Mathlib maintainer accept this as a proof of the stated theorem?
 
 First line of your reply must be exactly `VERDICT: ACCEPT` or `VERDICT: REJECT`. Then list objections, most serious first, each pointing at a line or a name. Lean will run regardless of your verdict; your objections are fed back to the proposer."""
 
@@ -116,6 +117,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--proposer", default="claude:claude-opus-5")
     ap.add_argument("--critic", default="none")
     ap.add_argument("--rounds", type=int, default=3)
+    ap.add_argument("--allow-circular", action="store_true",
+                    help="attack an entry whose circularity verdict is not `independent`")
     args = ap.parse_args(argv)
 
     elan = Path.home() / ".elan" / "bin"
@@ -135,6 +138,19 @@ def main(argv: list[str]) -> int:
     if problems:
         print("ledger invalid, refusing to start:\n  " + "\n  ".join(problems))
         return 2
+
+    circ = entry.get("circularity") or {}
+    circ_verdict = circ.get("verdict", "unassessed") if entry.get("toward") else None
+    if circ_verdict is not None and circ_verdict != "independent":
+        if not args.allow_circular:
+            print(
+                f"{entry['id']} serves {entry['toward']} and its circularity verdict is "
+                f"{circ_verdict!r}. Assess it before spending rounds on it: a lemma that is "
+                f"the target in disguise compiles like any other and proves nothing new, and "
+                f"Lean will not tell you. Override with --allow-circular."
+            )
+            return 2
+        print(f"WARNING: circularity verdict is {circ_verdict!r}; running anyway (--allow-circular)")
 
     proposer = get_provider(args.proposer)
     critic = get_provider(args.critic)
@@ -157,6 +173,15 @@ def main(argv: list[str]) -> int:
         f"Ledger entry: {entry['id']}\nTitle: {entry['title']}\n"
         f"Statement: {entry['statement']}\nNotes: {entry.get('notes', '')}\n"
     )
+    toward = next((e for e in ledger["entries"] if e["id"] == entry.get("toward")), None)
+    if toward is not None:
+        brief += (
+            f"\nThis entry serves the target {toward['id']} ({toward['title']}): {toward['statement']}\n"
+            f"Its circularity verdict against that target is {circ_verdict!r}"
+            + (f": {circ['argument']}\n" if circ.get("argument") else ".\n")
+            + "A proof of this entry that quietly assumes something as strong as that target "
+            "is not a proof of this entry.\n"
+        )
     feedback = ""
     outcome = "failed"
     rounds_run = 0
@@ -179,6 +204,7 @@ def main(argv: list[str]) -> int:
         record = {
             "entry": entry["id"], "round": rnd, "at": now(),
             "proposer": proposer.name, "critic": critic.name if critic else None,
+            **({"circularity": circ_verdict} if circ_verdict is not None else {}),
         }
         (attempts_dir / f"{stamp}_r{rnd}.lean").write_text(proposal)
 
@@ -248,6 +274,7 @@ def main(argv: list[str]) -> int:
     entry.setdefault("attacked_by", []).append({
         "by": proposer.name, "critic": critic.name if critic else None,
         "at": now(), "rounds": rounds_run, "result": outcome, "log": f"ledger/attempts/{entry['id']}/{stamp}_*",
+        **({"circularity": circ_verdict} if circ_verdict is not None else {}),
     })
     if outcome == "verified":
         entry["status"] = "verified"

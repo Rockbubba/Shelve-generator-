@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Regression test for the crew runner, using the scripted provider only
 # (no API keys). Exercises the stage-one target through every outcome:
-# statement tampering, axiom smuggling, a wrong proof, and a proof that
-# closes on the second round. Restores the working tree when done.
+# statement tampering, axiom smuggling, a wrong proof, a proof that closes
+# on the second round, and the circularity gate on the ledger. Restores the
+# working tree when done.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export PATH="$HOME/.elan/bin:$PATH"
@@ -23,6 +24,30 @@ expect() {  # expect <exit-code> <label> <args...>
   fi
   echo "ok   $label (exit $got)"
 }
+
+# The circularity gate. Neither case needs Lean: both fail before a build.
+patch_ledger() {  # patch_ledger <python statements operating on the entry `e`>
+  python3 - "$1" <<'PYPATCH'
+import json, pathlib, sys
+p = pathlib.Path("ledger/ledger.json")
+led = json.loads(p.read_text())
+for e in led["entries"]:
+    if e["id"] == "practice.stage1_sum_first_odd":
+        exec(sys.argv[1])
+p.write_text(json.dumps(led, indent=2, ensure_ascii=False) + "\n")
+PYPATCH
+}
+
+patch_ledger 'e["toward"] = "target.riemann"'
+if python3 scripts/audit.py --schema >/dev/null 2>&1; then
+  echo "FAIL: entry serving a target with no circularity assessment passed the schema"; exit 1
+fi
+echo "ok   missing circularity rejected by the schema"
+
+patch_ledger 'e["toward"] = "target.riemann"; e["circularity"] = {"verdict": "unassessed"}'
+expect 2 "unassessed circularity refused" --proposer scripted:$EX/good.lean --rounds 1
+grep -q "sorry" Vault/Practice/Stage1.lean || { echo "FAIL: the gate let the proposer run anyway"; exit 1; }
+cp "$TMP/ledger.json" ledger/ledger.json
 
 lake build >/dev/null 2>&1
 expect 1 "tampered statement rejected"  --proposer scripted:$EX/tampered.lean    --rounds 1
