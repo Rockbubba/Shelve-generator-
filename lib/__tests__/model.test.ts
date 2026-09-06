@@ -646,6 +646,70 @@ describe("pootjes en kleur", () => {
   });
 });
 
+describe("kolombreedtes en volledige achterwand", () => {
+  it("staander verschuiven verandert de planklengtes van beide buurkolommen", () => {
+    const base = buildCabinetModel(ACCEPT);
+    const model = buildCabinetModel({ ...ACCEPT, columnOffsets: { "1": 60 } });
+    const s2 = model.panels.find((p) => p.id === "S2")!;
+    expect(s2.place.x).toBeCloseTo(base.panels.find((p) => p.id === "S2")!.place.x + 60, 1);
+    expect(s2.staanderKey).toBe("col:1");
+    const plankLen = (mdl: typeof base, col: number) =>
+      mdl.panels.find((p) => p.type === "plank" && Math.abs(p.place.x - (mdl.panels.find((s) => s.id === `S${col + 1}`)!.place.x + ACCEPT.thickness - 7)) < 0.6)!.length;
+    expect(plankLen(model, 0)).toBeCloseTo(plankLen(base, 0) + 60, 1);
+    expect(plankLen(model, 1)).toBeCloseTo(plankLen(base, 1) - 60, 1);
+    expect(plankLen(model, 2)).toBeCloseTo(plankLen(base, 2), 1);
+    // Buitenstaanders vast, totale breedte gelijk.
+    expect(model.panels.find((p) => p.id === "S1")!.place.x).toBe(0);
+    expect(model.snappedWidth).toBe(base.snappedWidth);
+    expect(nestPanels(model.panels, ACCEPT.depth).errors).toHaveLength(0);
+  });
+
+  it("kolombreedte wordt begrensd op de minimale vakbreedte", () => {
+    const model = buildCabinetModel({ ...ACCEPT, columnOffsets: { "1": -5000, "2": 5000 } });
+    for (const c of model.cells) expect(c.w).toBeGreaterThanOrEqual(150 - 0.1);
+  });
+
+  it("samengevoegd vak krijgt precies één rugpaneel over de volle hoogte", () => {
+    // Kolom 0: rij 0 heeft standaard een rug; plank tussen rij 0 en 1 weg.
+    const base = buildCabinetModel(ACCEPT);
+    const model = buildCabinetModel({ ...ACCEPT, omittedShelves: { "0:0:1": true } });
+    const rugsCol0 = (mdl: typeof base) =>
+      mdl.panels.filter((p) => p.type === "rug" && p.place.x < 100);
+    expect(rugsCol0(base)).toHaveLength(2); // hoekvak onder + hoekvak boven
+    const merged = rugsCol0(model);
+    expect(merged).toHaveLength(2);
+    const bottom = merged.sort((a, b) => a.place.y - b.place.y)[0];
+    const cellH = base.cells.find((c) => c.col === 0 && c.row === 0)!.h;
+    expect(bottom.place.h).toBeCloseTo(2 * cellH + ACCEPT.thickness + ACCEPT.thickness, 0);
+  });
+
+  it("volledige achterwand: stukken ≤ 1200 mm breed met naden achter staanders, geheel gedekt", () => {
+    const model = buildCabinetModel({ ...ACCEPT, rugMode: "volledig" });
+    const rugs = model.panels.filter((p) => p.type === "rug").sort((a, b) => a.place.x - b.place.x);
+    expect(rugs.length).toBeGreaterThanOrEqual(2);
+    let x = 0;
+    for (const r of rugs) {
+      expect(r.place.x).toBeCloseTo(x, 1); // aansluitend
+      expect(r.place.w).toBeLessThanOrEqual(1200 + 0.01);
+      expect(r.place.h).toBeCloseTo(ACCEPT.height, 0);
+      x = r.place.x + r.place.w;
+    }
+    expect(x).toBeCloseTo(model.snappedWidth, 1);
+    // Naad ligt op een staanderhart.
+    const seam = rugs[0].place.x + rugs[0].place.w;
+    const centers = model.panels
+      .filter((p) => p.type === "staander")
+      .map((p) => p.place.x + ACCEPT.thickness / 2);
+    expect(centers.some((c) => Math.abs(c - seam) < 0.6)).toBe(true);
+    // Alle vakken tellen als rug; nesting van HDF foutloos.
+    expect(model.cells.every((c) => c.fill === "rug")).toBe(true);
+    const nesting = nestPanels(model.panels, ACCEPT.depth);
+    expect(nesting.errors).toHaveLength(0);
+    expect(nesting.hdfSheets.length).toBeGreaterThan(0);
+    expect(model.hardware.some((h) => h.name.startsWith("HDF achterwand"))).toBe(true);
+  });
+});
+
 describe("stabiliteit en modules", () => {
   it("waarschuwt zonder rug en zonder muurbevestiging", () => {
     const model = buildCabinetModel({

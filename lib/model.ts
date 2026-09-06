@@ -34,8 +34,10 @@ import {
   materialById,
   MIN_PROFILE_DEPTH,
   shelfKey,
+  HDF_SHEET_WIDTH,
   HDF_THICKNESS,
   KERF,
+  SHEET_MARGIN,
   MAX_MODULE_HEIGHT,
   MAX_PART_LENGTH,
   MIN_CELL_HEIGHT,
@@ -155,6 +157,10 @@ export interface Panel {
   contour?: [number, number][];
   /** Alleen voor weglaatbare tussenplanken: sleutel voor de 3D-toggle. */
   shelfKey?: string;
+  /** Alleen voor verplaatsbare binnenstaanders: sleutel `col:${i}`. */
+  staanderKey?: string;
+  /** Rotatie om de verticale as (rad), voor een rug tegen een schuine muur. */
+  yaw?: number;
 }
 
 export interface CellInfo {
@@ -419,6 +425,13 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
   /** Globale voorkant op breedtepositie x. */
   const frontAt = (x: number) => D - frontOffset(profile, x, W);
 
+  // Rug: volledig dichte achterwand wordt altijd geschroefd.
+  const fullBack = config.rugMode === "volledig";
+  const sponning = config.rugMount === "sponning" && !fullBack;
+  if (config.rugMount === "sponning" && fullBack) {
+    warnings.push("Een volledig dichte achterwand wordt op de achterkant geschroefd; de sponning-optie is hier niet van toepassing.");
+  }
+
   // Achterzijde: lineair verloop (scheve muur) en bestaande muurplint.
   const taper = config.backTaper;
   const backAt = (x: number) =>
@@ -434,7 +447,24 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
   /** Ligt iets op romp-hoogte y (vanaf romp-onderkant) achter de muurplint? */
   const behindSkirt = (bodyY: number) => skirtDepth > 0 && bodyY < skirtNotchH;
 
-  const staanderX = (i: number) => i * (cellW + t);
+  // Staanderposities: grid + verschuiving per binnenstaander, van links naar
+  // rechts begrensd zodat elke kolom minimaal MIN_CELL_WIDTH breed blijft.
+  const gridX = (i: number) => i * (cellW + t);
+  const xs: number[] = [0];
+  for (let i = 1; i < columns; i++) {
+    const raw = gridX(i) + (config.columnOffsets[String(i)] ?? 0);
+    const nextRaw =
+      i + 1 === columns ? gridX(columns) : gridX(i + 1) + (config.columnOffsets[String(i + 1)] ?? 0);
+    const lo = xs[i - 1] + t + MIN_CELL_WIDTH;
+    const hi = Math.max(lo, nextRaw - t - MIN_CELL_WIDTH);
+    xs.push(round1(Math.min(Math.max(raw, lo), hi)));
+  }
+  xs.push(round1(gridX(columns)));
+  const staanderX = (i: number) => xs[i];
+  const dadoInset = joinery === "dado" ? DADO_DEPTH : 0;
+  /** Vakbreedte en planklengte per kolom. */
+  const colWidth = (c: number) => round1(xs[c + 1] - xs[c] - t);
+  const colShelfLen = (c: number) => round1(colWidth(c) + 2 * dadoInset);
   const staanderBack = (i: number) => backAt(staanderX(i) + t / 2);
   const staanderFront = (i: number) =>
     profiled ? round1(frontAt(staanderX(i) + t / 2)) : D;
@@ -528,11 +558,11 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
     for (let c = 0; c < columns; c++) {
       const lv = presentLevels(c);
       const list: ColumnCell[] = [];
-      const cellBack = backAt(c * (cellW + t) + t + cellW / 2);
+      const cellBack = backAt(xs[c] + t + colWidth(c) / 2);
       for (let k = 0; k < lv.length - 1; k++) {
         const j0 = lv[k];
         const j1 = lv[k + 1];
-        const fill = cellFillFor(config, m, c, j0);
+        const fill: CellFill = fullBack ? "rug" : cellFillFor(config, m, c, j0);
         if (fill === "rug") rugCellCount++;
         const cell: ColumnCell = {
           row: j0,
@@ -550,10 +580,10 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
           row: j0,
           rowSpan: cell.rowSpan,
           fill,
-          x: c * (cellW + t) + t,
+          x: xs[c] + t,
           y: bodyBase + moduleBase + cell.y,
           z: gBack,
-          w: cellW,
+          w: colWidth(c),
           h: cell.h,
           d: Math.max(50, D - gBack),
         });
@@ -643,7 +673,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
 
         // RUG_SPONNING: verticale groef per rug-vak aan deze zijde
         // (alleen bij rug-in-sponning; geschroefde rug heeft geen groeven).
-        if (config.rugMount === "sponning") {
+        if (sponning) {
           for (const cell of colCells[colOfSide]) {
             if (cell.fill !== "rug") continue;
             const gBack = bi + (behindSkirt(moduleBase + cell.y) ? skirtDepth : 0);
@@ -691,6 +721,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
         notches: [],
         machineSide,
         contour,
+        staanderKey: i > 0 && i < columns ? `col:${i}` : undefined,
         place: {
           x: staanderX(i),
           y: bodyBase + moduleBase,
@@ -704,14 +735,14 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
     }
 
     // ---- Planken ------------------------------------------------------------
-    const dadoInset = joinery === "dado" ? DADO_DEPTH : 0;
     for (let c = 0; c < columns; c++) {
       const lv = presentLevels(c);
+      const shelfLen = colShelfLen(c);
       const fL = staanderFront(c);
       const fR = staanderFront(c + 1);
       const bL0 = staanderBack(c);
       const bR0 = staanderBack(c + 1);
-      const plankX0 = c * (cellW + t) + t - dadoInset;
+      const plankX0 = xs[c] + t - dadoInset;
       // Voorrand volgt het profiel; de uiteinden liggen exact op de voorkant
       // van de aansluitende staander zodat de voorzijde bij de naad vlak sluit.
       const front = (x: number) => {
@@ -853,7 +884,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
         // RUG_SPONNING in de plank (alleen bij rug-in-sponning):
         // bovenvlak voor het vak erboven, ondervlak voor het vak eronder.
         // Volgt de (eventueel schuine) achterrand.
-        if (config.rugMount === "sponning") {
+        if (sponning) {
           const rugAbove = j < rows && cellFillFor(config, m, c, j) === "rug";
           const rugBelow =
             idx > 0 && cellFillFor(config, m, c, lv[idx - 1]) === "rug";
@@ -925,15 +956,14 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
     // Geschroefd: paneel overlapt de achterranden van staanders en planken
     // (halve plaatdikte rondom) en wordt geschroefd — geen groeven nodig.
     // Sponning: paneel valt in de gefreesde groef.
-    const sponning = config.rugMount === "sponning";
     const rugOversize = sponning ? RUG_GROOVE_DEPTH - RUG_CLEARANCE : t / 2;
-    for (let c = 0; c < columns; c++) {
-      const cellBack = backAt(c * (cellW + t) + t + cellW / 2);
+    for (let c = 0; c < columns && !fullBack; c++) {
+      const cellBack = backAt(xs[c] + t + colWidth(c) / 2);
       for (const cell of colCells[c]) {
         if (cell.fill !== "rug") continue;
         rugNo++;
         const id = `R${rugNo}`;
-        const rw = round1(cellW + 2 * rugOversize);
+        const rw = round1(colWidth(c) + 2 * rugOversize);
         const rh = round1(cell.h + 2 * rugOversize);
         const gBack = cellBack + (behindSkirt(moduleBase + cell.y) ? skirtDepth : 0);
         panels.push({
@@ -947,7 +977,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
           notches: [],
           machineSide: "A",
           place: {
-            x: c * (cellW + t) + t - rugOversize,
+            x: xs[c] + t - rugOversize,
             y: bodyBase + moduleBase + cell.y - rugOversize,
             z: sponning
               ? gBack + RUG_GROOVE_BACK_OFFSET - HDF_THICKNESS / 2
@@ -958,6 +988,58 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
           },
           module: m,
         });
+      }
+    }
+
+    // ---- Volledig dichte achterwand -----------------------------------------
+    // Eén HDF-vlak per module, opgedeeld in stukken die op de HDF-plaat passen
+    // (≤ bruikbare plaatbreedte), met de naden achter staanderharten.
+    if (fullBack) {
+      const usable = HDF_SHEET_WIDTH - 2 * SHEET_MARGIN;
+      const yStart = m === 0 ? skirtNotchH : 0;
+      const pieceH = round1(Hm - yStart);
+      const slope = (taper.right - taper.left) / W;
+      let startI = 0;
+      while (startI < columns) {
+        const xStart = startI === 0 ? 0 : xs[startI] + t / 2;
+        let endI = startI + 1;
+        while (endI < columns) {
+          const candEnd = endI + 1 === columns ? W : xs[endI + 1] + t / 2;
+          if (candEnd - xStart <= usable) endI++;
+          else break;
+        }
+        const xEnd = endI === columns ? W : xs[endI] + t / 2;
+        const pieceW = round1(xEnd - xStart);
+        if (pieceW > usable) {
+          warnings.push(
+            `Achterwandstuk van ${pieceW} mm past niet op de HDF-plaat (max ${usable} mm) — verklein de kolombreedte of verdeel de kast.`,
+          );
+        }
+        rugNo++;
+        const id = `R${rugNo}`;
+        const xc = (xStart + xEnd) / 2;
+        panels.push({
+          id,
+          type: "rug",
+          material: "hdf4",
+          length: Math.max(pieceW, pieceH),
+          width: Math.min(pieceW, pieceH),
+          thickness: HDF_THICKNESS,
+          ops: [engrave(id, Math.max(pieceW, pieceH), Math.min(pieceW, pieceH), "A")],
+          notches: [],
+          machineSide: "A",
+          yaw: slope !== 0 ? -Math.atan(slope) : undefined,
+          place: {
+            x: xStart,
+            y: bodyBase + moduleBase + yStart,
+            z: backAt(xc) - HDF_THICKNESS,
+            w: pieceW,
+            h: pieceH,
+            d: HDF_THICKNESS,
+          },
+          module: m,
+        });
+        startI = endI;
       }
     }
 
@@ -1029,14 +1111,18 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
       unit: "stuks",
     });
   }
-  if (rugCellCount > 0) {
-    hardware.push({ name: "HDF rugpaneel 4 mm (gefreesd)", qty: rugCellCount, unit: "stuks" });
-    if (config.rugMount === "geschroefd") {
-      hardware.push({
-        name: "Spaanplaatschroef 3,5 × 16 mm (rug)",
-        qty: rugCellCount * RUG_SCREWS_PER_PANEL,
-        unit: "stuks",
-      });
+  const rugPanels = panels.filter((p) => p.type === "rug");
+  if (rugPanels.length > 0) {
+    hardware.push({
+      name: fullBack ? "HDF achterwand 4 mm (in stukken, naden achter staanders)" : "HDF rugpaneel 4 mm (gefreesd)",
+      qty: rugPanels.length,
+      unit: "stuks",
+    });
+    if (!sponning) {
+      const screws = fullBack
+        ? rugPanels.reduce((n, p) => n + Math.max(8, Math.ceil((2 * (p.length + p.width)) / 300)), 0)
+        : rugPanels.length * RUG_SCREWS_PER_PANEL;
+      hardware.push({ name: "Spaanplaatschroef 3,5 × 16 mm (rug)", qty: screws, unit: "stuks" });
     }
   }
   hardware.push({ name: "L-beugel muurbevestiging", qty: 2, unit: "stuks" });

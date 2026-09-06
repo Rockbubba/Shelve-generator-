@@ -209,7 +209,7 @@ export class CabinetScene {
 
     // Kleuren uit de configuratie (toon-materialen worden hergebruikt).
     this.toonMat.color.set(model.config.color);
-    this.toonMatHdf.color.set(model.config.color).multiplyScalar(0.9);
+    this.toonMatHdf.color.set(model.config.rugColor);
     this.feetMat.color.set(model.config.feet.color);
 
     const W = model.snappedWidth;
@@ -225,8 +225,11 @@ export class CabinetScene {
 
     for (const p of model.panels) {
       const { geo, centered } = this.panelGeometry(p);
+      const selected =
+        (p.shelfKey && p.shelfKey === selectedShelfKey) ||
+        (p.staanderKey && p.staanderKey === selectedShelfKey);
       const mat =
-        p.shelfKey && p.shelfKey === selectedShelfKey
+        selected
           ? this.toonMatSelected
           : p.material === "hdf4"
             ? this.toonMatHdf
@@ -241,16 +244,22 @@ export class CabinetScene {
       } else {
         mesh.position.set(off.x + p.place.x, off.y + p.place.y, off.z + p.place.z);
       }
+      if (p.yaw) mesh.rotation.y = p.yaw;
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       if (p.shelfKey) {
         mesh.userData.shelfKey = p.shelfKey;
         this.shelfTargets.push(mesh);
       }
+      if (p.staanderKey) {
+        mesh.userData.shelfKey = p.staanderKey; // zelfde selectiekanaal
+        this.shelfTargets.push(mesh);
+      }
       group.add(mesh);
 
       const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), this.edgeMat);
       edges.position.copy(mesh.position);
+      edges.rotation.copy(mesh.rotation);
       group.add(edges);
     }
 
@@ -281,15 +290,17 @@ export class CabinetScene {
     }
 
     // Weggelaten planken als doorzichtige ghost (tik = terugzetten).
+    // Alleen het voorste deel, zodat de ghost niet over een rugpaneel valt.
     for (const g of model.ghostShelves) {
+      const gd = g.place.d * 0.4;
       const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(g.place.w, g.place.h, g.place.d),
+        new THREE.BoxGeometry(g.place.w, g.place.h, gd),
         this.ghostMat,
       );
       mesh.position.set(
         off.x + g.place.x + g.place.w / 2,
         off.y + g.place.y + g.place.h / 2,
-        off.z + g.place.z + g.place.d / 2,
+        off.z + g.place.z + g.place.d - gd / 2,
       );
       mesh.userData.shelfKey = g.key;
       group.add(mesh);

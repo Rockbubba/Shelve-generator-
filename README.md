@@ -168,6 +168,22 @@ boringen op de juiste plek zitten.
   De DXF-contour van ondersteboven liggende planken wordt over de korte
   zijde gespiegeld.
 
+### Kolombreedtes en volledige achterwand
+
+- **Kolombreedtes**: in de indelingseditor (stap 2) zijn binnenstaanders
+  selecteerbaar en horizontaal te slepen (snapt op 10 mm), of via de
+  stepper "Positie staander". Buurkolommen krijgen dan verschillende
+  planklengtes; buitenstaanders en totale breedte blijven vast. Het model
+  begrenst op 150 mm vakbreedte. Voorkantprofiel en verloop achter worden
+  op de werkelijke staanderposities geëvalueerd.
+- **Volledig dichte achterwand**: optie "Rug → Volledig dicht". De hele
+  achterzijde wordt met 4 mm HDF gesloten, per module opgedeeld in stukken
+  die op de HDF-plaat passen (≤ 1200 mm breed) met de naden achter
+  staanderharten; boven een muurplint begint de wand pas boven de plint.
+  Altijd geschroefd; alle vakken tellen als rug voor de stabiliteit. Tegen
+  een scheve muur staat de wand onder de bijbehorende hoek.
+- **Rugkleur** is apart instelbaar.
+
 ### Muur, pootjes en kleur
 
 - **Scheve muur (verloop achter)**: geef links en rechts op hoeveel mm de

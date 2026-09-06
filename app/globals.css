@@ -43,3 +43,41 @@ body {
     padding: 0;
   }
 }
+
+/* Schuifregelaar met grote, goed aan te raken duim */
+.slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 28px;
+  background: transparent;
+  touch-action: pan-y;
+}
+.slider::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: #d4d4d4;
+}
+.slider::-moz-range-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: #d4d4d4;
+}
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  margin-top: -11px;
+  border-radius: 9999px;
+  background: #1a1a1a;
+  border: 3px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+.slider::-moz-range-thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: 9999px;
+  background: #1a1a1a;
+  border: 3px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}

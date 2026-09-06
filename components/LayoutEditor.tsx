@@ -14,27 +14,37 @@ import { CabinetModel } from "@/lib/model";
 export default function LayoutEditor({
   model,
   offsets,
+  columnOffsets,
   selected,
   onSelect,
   onOffsetChange,
+  onColumnOffsetChange,
   onRestore,
 }: {
   model: CabinetModel;
   offsets: Record<string, number>;
+  columnOffsets: Record<string, number>;
   selected: string | null;
   onSelect: (key: string | null) => void;
   onOffsetChange: (key: string, offset: number) => void;
+  onColumnOffsetChange: (index: number, offset: number) => void;
   onRestore?: (key: string) => void;
 }) {
   const W = model.snappedWidth;
   const H = model.config.height;
   const svgRef = useRef<SVGSVGElement>(null);
-  const drag = useRef<{ key: string; startPx: number; startOffset: number } | null>(null);
+  const drag = useRef<{
+    key: string;
+    axis: "y" | "x";
+    startPx: number;
+    startOffset: number;
+  } | null>(null);
   const [dragging, setDragging] = useState(false);
 
-  const mmPerPx = () => {
+  const mmPerPx = (axis: "x" | "y") => {
     const box = svgRef.current?.getBoundingClientRect();
-    return box && box.height > 0 ? H / box.height : 1;
+    if (!box) return 1;
+    return axis === "y" ? (box.height > 0 ? H / box.height : 1) : box.width > 0 ? W / box.width : 1;
   };
 
   const staanders = model.panels.filter((p) => p.type === "staander");
@@ -50,9 +60,18 @@ export default function LayoutEditor({
       aria-label="Vakindeling vooraanzicht"
       onPointerMove={(e) => {
         if (!drag.current) return;
-        const dyMm = -(e.clientY - drag.current.startPx) * mmPerPx();
-        const snapped = Math.round(dyMm / 10) * 10;
-        onOffsetChange(drag.current.key, drag.current.startOffset + snapped);
+        if (drag.current.axis === "y") {
+          const dyMm = -(e.clientY - drag.current.startPx) * mmPerPx("y");
+          const snapped = Math.round(dyMm / 10) * 10;
+          onOffsetChange(drag.current.key, drag.current.startOffset + snapped);
+        } else {
+          const dxMm = (e.clientX - drag.current.startPx) * mmPerPx("x");
+          const snapped = Math.round(dxMm / 10) * 10;
+          onColumnOffsetChange(
+            Number(drag.current.key.replace("col:", "")),
+            drag.current.startOffset + snapped,
+          );
+        }
       }}
       onPointerUp={() => {
         drag.current = null;
@@ -63,16 +82,35 @@ export default function LayoutEditor({
         setDragging(false);
       }}
     >
-      {staanders.map((s) => (
-        <rect
-          key={s.id}
-          x={s.place.x}
-          y={H - (s.place.y + s.place.h)}
-          width={s.place.w}
-          height={s.place.h}
-          fill="#d4d4d4"
-        />
-      ))}
+      {staanders.map((s) => {
+        const movable = Boolean(s.staanderKey);
+        const isSel = movable && s.staanderKey === selected;
+        return (
+          <rect
+            key={s.id}
+            x={s.place.x}
+            y={H - (s.place.y + s.place.h)}
+            width={Math.max(s.place.w, 14)}
+            height={s.place.h}
+            fill={isSel ? "#2563eb" : movable ? "#a3a3a3" : "#d4d4d4"}
+            style={{ cursor: movable ? (dragging ? "grabbing" : "ew-resize") : "default" }}
+            onPointerDown={(e) => {
+              if (!s.staanderKey) return;
+              e.preventDefault();
+              (e.currentTarget as SVGRectElement).setPointerCapture?.(e.pointerId);
+              onSelect(s.staanderKey);
+              const idx = s.staanderKey.replace("col:", "");
+              drag.current = {
+                key: s.staanderKey,
+                axis: "x",
+                startPx: e.clientX,
+                startOffset: columnOffsets[idx] ?? 0,
+              };
+              setDragging(true);
+            }}
+          />
+        );
+      })}
       {planken.map((p) => {
         const selectable = Boolean(p.shelfKey);
         const isSel = selectable && p.shelfKey === selected;
@@ -92,6 +130,7 @@ export default function LayoutEditor({
               onSelect(p.shelfKey);
               drag.current = {
                 key: p.shelfKey,
+                axis: "y",
                 startPx: e.clientY,
                 startOffset: offsets[p.shelfKey] ?? 0,
               };

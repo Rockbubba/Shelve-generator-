@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 /** Kleine, mobile-first bedieningscomponenten met grote touch-targets. */
 
 export function Stepper({
@@ -22,6 +24,21 @@ export function Stepper({
   hint?: string;
 }) {
   const clamp = (v: number) => Math.min(max, Math.max(min, v));
+  // Typen gebeurt in een lokale tekstbuffer: pas bij Enter of het verlaten van
+  // het veld wordt de waarde begrensd en doorgegeven. Zo kun je "1" typen
+  // zonder dat het veld direct naar het minimum springt.
+  const [draft, setDraft] = useState<string>(String(value));
+  const [editing, setEditing] = useState(false);
+  useEffect(() => {
+    if (!editing) setDraft(String(value));
+  }, [value, editing]);
+  const commit = () => {
+    const v = Number(draft.replace(",", "."));
+    if (Number.isFinite(v)) onChange(clamp(v));
+    else setDraft(String(value));
+    setEditing(false);
+  };
+
   return (
     <div className="py-2">
       <div className="flex items-baseline justify-between">
@@ -39,16 +56,21 @@ export function Stepper({
         </button>
         <div className="flex flex-1 items-center justify-center rounded-xl bg-neutral-100">
           <input
-            type="number"
-            inputMode="numeric"
+            type="text"
+            inputMode="decimal"
+            aria-label={label}
             className="w-20 bg-transparent text-center text-base font-semibold outline-none"
-            value={value}
-            min={min}
-            max={max}
-            step={step}
-            onChange={(e) => {
-              const v = Number(e.target.value);
-              if (Number.isFinite(v)) onChange(clamp(v));
+            value={draft}
+            onFocus={() => setEditing(true)}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              if (e.key === "Escape") {
+                setDraft(String(value));
+                setEditing(false);
+                (e.target as HTMLInputElement).blur();
+              }
             }}
           />
           <span className="text-sm text-neutral-500">{unit}</span>
@@ -62,6 +84,16 @@ export function Stepper({
           +
         </button>
       </div>
+      <input
+        type="range"
+        aria-label={`${label} schuifregelaar`}
+        className="slider mt-2 w-full"
+        min={min}
+        max={max}
+        step={step}
+        value={clamp(value)}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
     </div>
   );
 }

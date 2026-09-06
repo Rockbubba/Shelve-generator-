@@ -138,6 +138,12 @@ export type BaseType = "plint" | "pootjes" | "geen";
  * groef (vergt bewerkingen aan twee zijden van planken en staanders).
  */
 export type RugMount = "geschroefd" | "sponning";
+/**
+ * `per-vak`: rugpanelen per vak (aan/uit door tikken); `volledig`: de hele
+ * achterzijde dicht met HDF, opgedeeld in stukken die op de HDF-plaat passen
+ * met de naden achter staanders (altijd geschroefd).
+ */
+export type RugMode = "per-vak" | "volledig";
 
 /**
  * Profiel van de voorzijde over de kastbreedte: de voorkant wijkt op
@@ -259,12 +265,22 @@ export interface CabinetConfig {
    * vakhoogtes; het model begrenst op MIN_CELL_HEIGHT.
    */
   shelfOffsets: Record<string, number>;
+  /**
+   * Horizontale verschuiving (mm, + = naar rechts) van binnenstaander i
+   * (1..columns-1) t.o.v. het grid, key = `${i}`. Zo variëren de
+   * kolombreedtes; het model begrenst op MIN_CELL_WIDTH.
+   */
+  columnOffsets: Record<string, number>;
+  /** Rug per vak (toggle in 3D) of één volledig dichte achterwand. */
+  rugMode: RugMode;
   frontProfile: FrontProfile;
   backTaper: BackTaper;
   wallSkirting: WallSkirting;
   feet: FeetConfig;
   /** Renderkleur van de kast (hex). */
   color: string;
+  /** Renderkleur van de rugpanelen/achterwand (hex). */
+  rugColor: string;
 }
 
 export const DEFAULT_CONFIG: CabinetConfig = {
@@ -285,11 +301,14 @@ export const DEFAULT_CONFIG: CabinetConfig = {
   wallMount: true,
   omittedShelves: {},
   shelfOffsets: {},
+  columnOffsets: {},
+  rugMode: "per-vak",
   frontProfile: { type: "recht", amplitude: 60, periodes: 2, mirror: false },
   backTaper: { left: 0, right: 0 },
   wallSkirting: { height: 0, depth: 0 },
   feet: { type: "rond", height: 100, size: 40, color: "#222222" },
   color: "#ffffff",
+  rugColor: "#e8e4dc",
 };
 
 // ---- Diepte-opties (strip-nesting) ------------------------------------------

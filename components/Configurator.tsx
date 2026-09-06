@@ -112,14 +112,28 @@ export default function Configurator() {
     });
   }, []);
 
+  const setColumnOffset = useCallback((index: number, offset: number) => {
+    setConfig((c) => {
+      const columnOffsets = { ...c.columnOffsets };
+      if (Math.abs(offset) < 0.01) delete columnOffsets[String(index)];
+      else columnOffsets[String(index)] = Math.round(offset);
+      return { ...c, columnOffsets };
+    });
+  }, []);
+
+  const selectedStaander = selectedShelf?.startsWith("col:")
+    ? model.panels.find((p) => p.staanderKey === selectedShelf) ?? null
+    : null;
+
   const omitShelf = useCallback((key: string) => {
     setConfig((c) => ({ ...c, omittedShelves: { ...c.omittedShelves, [key]: true } }));
     setSelectedShelf(null);
   }, []);
 
-  const selectedPlank = selectedShelf
-    ? model.panels.find((p) => p.shelfKey === selectedShelf) ?? null
-    : null;
+  const selectedPlank =
+    selectedShelf && !selectedShelf.startsWith("col:")
+      ? model.panels.find((p) => p.shelfKey === selectedShelf) ?? null
+      : null;
 
   const peek = (
     <div className="flex items-center justify-between">
@@ -276,7 +290,7 @@ export default function Configurator() {
                 label="Inkorting links"
                 value={config.backTaper.left}
                 min={0}
-                max={100}
+                max={300}
                 step={5}
                 onChange={(left) => update({ backTaper: { ...config.backTaper, left } })}
               />
@@ -284,7 +298,7 @@ export default function Configurator() {
                 label="Inkorting rechts"
                 value={config.backTaper.right}
                 min={0}
-                max={100}
+                max={300}
                 step={5}
                 onChange={(right) => update({ backTaper: { ...config.backTaper, right } })}
               />
@@ -352,11 +366,48 @@ export default function Configurator() {
             <LayoutEditor
               model={model}
               offsets={config.shelfOffsets}
+              columnOffsets={config.columnOffsets}
               selected={selectedShelf}
               onSelect={setSelectedShelf}
               onOffsetChange={setShelfOffset}
+              onColumnOffsetChange={setColumnOffset}
               onRestore={onShelfTap}
             />
+            {selectedStaander && selectedShelf ? (
+              <div className="mt-2 rounded-xl bg-blue-50 p-3">
+                <Stepper
+                  label="Positie staander (hart)"
+                  value={Math.round(selectedStaander.place.x + config.thickness / 2)}
+                  min={0}
+                  max={Math.round(model.snappedWidth)}
+                  step={10}
+                  onChange={(v) => {
+                    const idx = Number(selectedShelf.replace("col:", ""));
+                    const cur = selectedStaander.place.x + config.thickness / 2;
+                    setColumnOffset(idx, (config.columnOffsets[String(idx)] ?? 0) + (v - cur));
+                  }}
+                  hint="minimaal 150 mm vakbreedte"
+                />
+                <div className="mt-1 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="btn-touch rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium active:bg-neutral-100"
+                    onClick={() =>
+                      setColumnOffset(Number(selectedShelf.replace("col:", "")), 0)
+                    }
+                  >
+                    Terug op grid
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-touch ml-auto rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white active:bg-neutral-700"
+                    onClick={() => setSelectedShelf(null)}
+                  >
+                    Klaar
+                  </button>
+                </div>
+              </div>
+            ) : null}
             {selectedPlank && selectedShelf ? (
               <div className="mt-2 rounded-xl bg-blue-50 p-3">
                 <Stepper
@@ -397,20 +448,22 @@ export default function Configurator() {
                   </button>
                 </div>
               </div>
-            ) : (
+            ) : selectedStaander ? null : (
               <p className="mt-2 text-xs text-neutral-500">
                 Selecteer een tussenplank (hier of in 3D) om hem hoger/lager te
-                zetten of weg te laten. Weggelaten planken zijn gestippeld —
-                tik erop om ze terug te zetten.
+                zetten of weg te laten, of een binnenstaander om hem naar links
+                of rechts te schuiven. Weggelaten planken zijn gestippeld — tik
+                erop om ze terug te zetten.
               </p>
             )}
             {(Object.keys(config.omittedShelves).length > 0 ||
-              Object.keys(config.shelfOffsets).length > 0) && (
+              Object.keys(config.shelfOffsets).length > 0 ||
+              Object.keys(config.columnOffsets).length > 0) && (
               <button
                 type="button"
                 className="btn-touch mt-2 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 active:bg-neutral-100"
                 onClick={() => {
-                  update({ omittedShelves: {}, shelfOffsets: {} });
+                  update({ omittedShelves: {}, shelfOffsets: {}, columnOffsets: {} });
                   setSelectedShelf(null);
                 }}
               >
@@ -493,6 +546,40 @@ export default function Configurator() {
               onChange={(cabineoVariant) => update({ cabineoVariant })}
             />
           )}
+          <Segmented
+            label="Rug"
+            options={[
+              { value: "per-vak", label: "Per vak", sub: "tik vakken aan/uit" },
+              { value: "volledig", label: "Volledig dicht", sub: "hele achterwand" },
+            ]}
+            value={config.rugMode}
+            onChange={(rugMode) => update({ rugMode })}
+          />
+          <label className="flex items-center justify-between py-2 text-sm">
+            <span className="font-medium">Kleur rug</span>
+            <span className="flex items-center gap-2">
+              {CABINET_COLORS.slice(0, 4).map((c) => (
+                <button
+                  key={c.hex}
+                  type="button"
+                  title={c.naam}
+                  aria-label={`Rug ${c.naam}`}
+                  className={`btn-touch h-8 w-8 rounded-full border-2 ${
+                    config.rugColor.toLowerCase() === c.hex ? "border-accent" : "border-neutral-200"
+                  }`}
+                  style={{ background: c.hex }}
+                  onClick={() => update({ rugColor: c.hex })}
+                />
+              ))}
+              <input
+                type="color"
+                aria-label="Eigen rugkleur"
+                value={config.rugColor}
+                onChange={(e) => update({ rugColor: e.target.value })}
+                className="h-9 w-14 cursor-pointer rounded-lg border border-neutral-300 bg-white"
+              />
+            </span>
+          </label>
           <Segmented
             label="Rugbevestiging"
             options={[
@@ -609,9 +696,9 @@ export default function Configurator() {
           <div className="mt-2 rounded-xl bg-neutral-50 p-3 text-xs text-neutral-600">
             <p className="font-medium text-neutral-800">Rugpanelen</p>
             <p className="mt-1">
-              Tik op een vak in de 3D-weergave om een rugpaneel (4 mm HDF) toe te
-              voegen of te verwijderen. De generator stelt hoekvakken en de
-              onderste rij voor als minimale set tegen schranken.
+              {config.rugMode === "volledig"
+                ? "De hele achterzijde wordt dicht gezet met 4 mm HDF, opgedeeld in stukken die op de plaat passen; de naden vallen achter staanders."
+                : "Tik op een vak in de 3D-weergave om een rugpaneel (4 mm HDF) toe te voegen of te verwijderen. De generator stelt hoekvakken en de onderste rij voor als minimale set tegen schranken."}
             </p>
             <button
               type="button"
