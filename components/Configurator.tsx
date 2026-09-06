@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CABINET_COLORS,
   CabinetConfig,
@@ -37,6 +37,8 @@ import BottomSheet, { SheetSnap } from "./BottomSheet";
 import NestingPreview from "./NestingPreview";
 import BomView from "./BomView";
 import LayoutEditor from "./LayoutEditor";
+import SaveMenu from "./SaveMenu";
+import { configFromUrl, loadDraft, saveDraft } from "@/lib/storage";
 import { Segmented, Stepper, Toggle } from "./controls";
 
 const STEPS = ["Maatvoering", "Vakverdeling", "Opties", "Output"] as const;
@@ -48,6 +50,45 @@ function nlNumber(v: number, decimals = 1): string {
 export default function Configurator() {
   const [config, setConfig] = useState<CabinetConfig>(DEFAULT_CONFIG);
   const [step, setStep] = useState(0);
+  /** Pas na het herstellen uit de browseropslag gaan we zelf opslaan. */
+  const restored = useRef(false);
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
+  const [restoreNote, setRestoreNote] = useState<string | null>(null);
+
+  // Herstel: deellink in de URL gaat vóór het automatisch bewaarde concept.
+  useEffect(() => {
+    const fromUrl = configFromUrl();
+    if (fromUrl) {
+      setConfig(fromUrl);
+      setRestoreNote("Ontwerp uit deellink geopend");
+      window.history.replaceState(null, "", window.location.pathname);
+    } else {
+      const draft = loadDraft();
+      if (draft) {
+        setConfig(draft.config);
+        setStep(Math.min(Math.max(draft.step, 0), STEPS.length - 1));
+        setLastSavedAt(draft.savedAt);
+        setRestoreNote("Vorige sessie hersteld");
+      }
+    }
+    restored.current = true;
+  }, []);
+
+  // Automatisch bewaren (licht vertraagd zodat slepen niet elke ms schrijft).
+  useEffect(() => {
+    if (!restored.current) return;
+    const t = setTimeout(() => {
+      saveDraft(config, step);
+      setLastSavedAt(Date.now());
+    }, 400);
+    return () => clearTimeout(t);
+  }, [config, step]);
+
+  useEffect(() => {
+    if (!restoreNote) return;
+    const t = setTimeout(() => setRestoreNote(null), 4000);
+    return () => clearTimeout(t);
+  }, [restoreNote]);
   const [snap, setSnap] = useState<SheetSnap>("half");
   /** Geselecteerde tussenplank (sleutel) voor hoogte/weglaten. */
   const [selectedShelf, setSelectedShelf] = useState<string | null>(null);
@@ -158,6 +199,30 @@ export default function Configurator() {
     </div>
   );
 
+  const saveMenu = (
+    <>
+      {restoreNote && (
+        <p className="mb-2 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs text-emerald-800" role="status">
+          {restoreNote}
+        </p>
+      )}
+      <SaveMenu
+        config={config}
+        lastSavedAt={lastSavedAt}
+        onLoad={(c) => {
+          setConfig(c);
+          setSelectedShelf(null);
+          setStep(0);
+        }}
+        onReset={() => {
+          setConfig(DEFAULT_CONFIG);
+          setSelectedShelf(null);
+          setStep(0);
+        }}
+      />
+    </>
+  );
+
   const stepNav = (
     <nav className="mb-2 flex gap-1" aria-label="Stappen">
       {STEPS.map((name, i) => (
@@ -181,6 +246,7 @@ export default function Configurator() {
 
   const settings = (
     <div>
+      {saveMenu}
       {stepNav}
       {step === 0 && (
         <div>

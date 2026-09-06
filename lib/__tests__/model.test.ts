@@ -18,6 +18,7 @@ import {
 import { nestPanels } from "../nesting";
 import { panelContour, panelContourInBedFrame, placementContour, placementOps, sheetToDxf } from "../dxf";
 import { estimateMachining, MACHINE } from "../costing";
+import { decodeConfig, encodeConfig, normalizeConfig } from "../storage";
 
 /** Acceptatiekast: 1800 × 2000 × ~398, 4 kolommen × 5 rijen. */
 const ACCEPT: CabinetConfig = {
@@ -915,5 +916,33 @@ describe("gedraaide onderdelen in de nesting", () => {
     const dxf = sheetToDxf({ index: 0, material: "plaat18", sheetLength: 2440, sheetWidth: 1220, placements: [rot], strips: [] });
     expect(dxf).toContain("AC1009");
     expect(dxf).toMatch(/\r?\n50\r?\n90/);
+  });
+});
+
+describe("opslag: normaliseren en deellink", () => {
+  it("vult een oude/onvolledige configuratie aan met standaardwaarden", () => {
+    const c = normalizeConfig({ width: 1234, feet: { height: 120 }, cellFills: { "0:0:0": "rug" } });
+    expect(c.width).toBe(1234);
+    expect(c.plinthSetback).toBe(DEFAULT_CONFIG.plinthSetback);
+    expect(c.feet.height).toBe(120);
+    expect(c.feet.type).toBe(DEFAULT_CONFIG.feet.type);
+    expect(c.cellFills["0:0:0"]).toBe("rug");
+    expect(normalizeConfig(null)).toEqual(DEFAULT_CONFIG);
+  });
+
+  it("codeert alleen afwijkingen en decodeert terug naar dezelfde configuratie", () => {
+    const config: CabinetConfig = {
+      ...ACCEPT,
+      width: 2222,
+      omittedShelves: { "0:1:2": true },
+      columnOffsets: { "1": 60 },
+      frontProfile: { type: "golf", amplitude: 40, periodes: 3, mirror: true },
+      rugColor: "#123456",
+    };
+    const encoded = encodeConfig(config);
+    expect(encoded).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(decodeConfig(encoded)).toEqual(config);
+    expect(encodeConfig(DEFAULT_CONFIG).length).toBeLessThan(encoded.length);
+    expect(decodeConfig("dit is geen geldige link")).toBeNull();
   });
 });

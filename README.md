@@ -203,6 +203,14 @@ boringen op de juiste plek zitten.
   assenstelsel (muurlijn = 0) gerekend en per onderdeel naar het eigen
   CNC-frame vertaald, zodat dado's en boringen aan beide kanten van een naad
   exact samenvallen.
+- **Opslaan en herstellen** (`lib/storage.ts`, `components/SaveMenu.tsx`):
+  elke wijziging wordt automatisch in de browser bewaard (localStorage,
+  inclusief de actieve stap) en na een refresh hersteld. Via "Opslaan /
+  laden" bewaart de klant benoemde ontwerpen, laadt of verwijdert ze, en
+  kopieert een deellink (`?o=…`, alleen de afwijkingen van de standaard als
+  base64url) om het ontwerp op een ander apparaat te openen of naar ons te
+  sturen. "Opnieuw beginnen" zet alles terug naar de standaardkast. Oudere
+  opgeslagen configuraties worden bij het laden aangevuld met nieuwe velden.
 - **Plint**: 80 mm hoog tussen de buitenste staanders; standaard 40 mm
   teruggelegd t.o.v. het ondiepste punt van de voorkant, maar ook vlak met
   de voorkant of op een eigen maat (0–150 mm) te zetten.
@@ -230,6 +238,7 @@ configureerbaar zijn.
 lib/config.ts     — constanten, types, diepte-opties
 lib/model.ts      — parametrisch kastmodel → panelen + bewerkingen + hardware
 lib/nesting.ts    — strip-nesting, yield
+lib/storage.ts    — concept/ontwerpen in localStorage, deellink
 lib/dxf.ts        — DXF-writer (lagen, polylines, cirkels, tekst)
 lib/bom.ts        — onderdelenlijst + CSV
 lib/export.ts     — downloads (DXF, zip, CSV) met share sheet op mobiel
