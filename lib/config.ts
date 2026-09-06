@@ -76,7 +76,8 @@ export function cabineoEdgeOffsets(depth: number): { a: number; b: number } {
 export const MAX_MODULE_HEIGHT = 2400;
 export const MAX_PART_LENGTH = USABLE_LENGTH; // 2420, geen onderdeel langer dan dit
 export const PLINTH_HEIGHT = 80;
-export const PLINTH_SETBACK = 40; // plint teruggelegd t.o.v. voorzijde
+export const PLINTH_SETBACK = 40; // standaard: plint teruggelegd t.o.v. voorzijde
+export const MAX_PLINTH_SETBACK = 150;
 export const WALL_BRACKET_MANDATORY_HEIGHT = 1500;
 
 export const MIN_WIDTH = 300;
@@ -107,11 +108,13 @@ export interface SheetMaterial {
   prijsPerPlaat?: Partial<Record<number, number>>;
   /** HPL: Cabineo-boutgat Ø5,5 i.p.v. Ø5 (officiële Lamello-voorschrift). */
   hpl?: boolean;
+  /** Zichtbare nerf-/decorrichting: onderdelen mogen dan niet gedraaid genest worden. */
+  nerf?: boolean;
 }
 
 export const SHEET_MATERIALS: SheetMaterial[] = [
   { id: "mdf", naam: "MDF", diktes: [12, 15, 18, 19, 22, 25] },
-  { id: "multiplex", naam: "Multiplex berken", diktes: [12, 15, 18, 21, 24] },
+  { id: "multiplex", naam: "Multiplex berken", diktes: [12, 15, 18, 21, 24], nerf: true },
   { id: "spaanplaat", naam: "Spaanplaat (melamine)", diktes: [18, 25] },
   { id: "hpl", naam: "HPL / compact", diktes: [10, 12, 13], hpl: true },
 ];
@@ -281,6 +284,11 @@ export interface CabinetConfig {
   color: string;
   /** Renderkleur van de rugpanelen/achterwand (hex). */
   rugColor: string;
+  /**
+   * Hoeveel de plint terugligt t.o.v. het ondiepste punt van de voorkant
+   * (mm). 0 = vlak (flush) met de voorkant; standaard 40.
+   */
+  plinthSetback: number;
 }
 
 export const DEFAULT_CONFIG: CabinetConfig = {
@@ -309,6 +317,7 @@ export const DEFAULT_CONFIG: CabinetConfig = {
   feet: { type: "rond", height: 100, size: 40, color: "#222222" },
   color: "#ffffff",
   rugColor: "#e8e4dc",
+  plinthSetback: PLINTH_SETBACK,
 };
 
 // ---- Diepte-opties (strip-nesting) ------------------------------------------

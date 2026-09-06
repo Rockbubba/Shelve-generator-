@@ -1,7 +1,26 @@
 /**
- * Strip-nesting: de plaat wordt opgedeeld in stroken op kastdiepte,
- * onderdelen worden first-fit-decreasing over de stroken verdeeld
- * (staanders — de langste onderdelen — eerst, planken op restlengtes).
+ * Nesting van de onderdelen op de plaat.
+ *
+ * Strook-gebaseerd (guillotine-vriendelijk, dus met een gewone
+ * afkortzaag of één rechte snede te volgen), maar slimmer dan één vaste
+ * strookhoogte:
+ *
+ * 1. Onderdelen worden gesorteerd op breedte (aflopend) en daarna lengte.
+ * 2. Elke strook krijgt de hoogte van het eerste (breedste) onderdeel erin;
+ *    smallere onderdelen (plint, bovenstukken van een verloop) krijgen dus
+ *    een lage strook in plaats van een volle strook op kastdiepte.
+ * 3. Binnen een strook worden smalle onderdelen op elkaar gestapeld
+ *    (kolommen), zodat bijvoorbeeld twee rugpanelen boven elkaar in een
+ *    strook op de hoogte van een samengevoegd vak passen.
+ * 4. Best-fit: een onderdeel gaat naar de strook waar het het krapst past
+ *    (kleinste restlengte na plaatsing), zodat lange rests bewaard blijven
+ *    voor lange onderdelen.
+ * 5. Restbreedte onderaan een plaat (bij vrije dieptes) wordt gebruikt voor
+ *    smallere onderdelen in plaats van een nieuwe plaat te beginnen.
+ *
+ * 6. Draaien (90°): HDF-rugpanelen altijd (geen nerf, geen bewerkingen);
+ *    18mm-onderdelen alleen bij nerfloze materialen (MDF, spaanplaat, HPL).
+ *    De DXF en de preview draaien contour en bewerkingen mee.
  */
 
 import {
@@ -11,9 +30,6 @@ import {
   SHEET_LENGTH,
   SHEET_MARGIN,
   SHEET_WIDTH,
-  USABLE_LENGTH,
-  USABLE_WIDTH,
-  stripsPerSheetForDepth,
 } from "./config";
 import { Material, Panel } from "./model";
 
@@ -22,9 +38,11 @@ export interface Placement {
   /** Positie van de linkeronderhoek van het onderdeel op de plaat (mm). */
   x: number;
   y: number;
-  /** Afmeting op de plaat: length langs x, width langs y. */
+  /** Voetafdruk op de plaat: length langs x, width langs y. */
   length: number;
   width: number;
+  /** 90° gedraaid: de lengte van het onderdeel loopt langs de plaat-y. */
+  rotated: boolean;
 }
 
 export interface NestedSheet {
@@ -33,6 +51,8 @@ export interface NestedSheet {
   sheetLength: number;
   sheetWidth: number;
   placements: Placement[];
+  /** Stroken op deze plaat (y-onderkant en hoogte), voor de preview. */
+  strips: { y: number; height: number; usedLength: number }[];
 }
 
 export interface NestingResult {
@@ -45,12 +65,38 @@ export interface NestingResult {
   errors: string[];
 }
 
+/** Een kolom in een strook: onderdelen boven elkaar met gelijke x. */
+interface Column {
+  x: number;
+  length: number;
+  /** Bovenkant van het hoogste onderdeel in deze kolom. */
+  top: number;
+}
+
 interface Strip {
-  sheet: number;
+  sheet: SheetState;
   y: number;
   height: number;
   cursorX: number;
+  columns: Column[];
   placements: Placement[];
+}
+
+interface SheetState {
+  index: number;
+  /** Eerste vrije y boven de laatste strook (zonder freesbaan). */
+  nextY: number;
+  strips: Strip[];
+}
+
+const EPS = 0.01;
+
+interface Orientation {
+  /** Voetafdruk langs x. */
+  l: number;
+  /** Voetafdruk langs y (strookhoogte die nodig is). */
+  w: number;
+  rotated: boolean;
 }
 
 function nestMaterial(
@@ -58,90 +104,156 @@ function nestMaterial(
   material: Material,
   sheetLength: number,
   sheetWidth: number,
-  stripHeight: number,
+  allowRotation: boolean,
   errors: string[],
 ): NestedSheet[] {
   const usableLength = sheetLength - 2 * SHEET_MARGIN;
   const usableWidth = sheetWidth - 2 * SHEET_MARGIN;
-  const stripsPerSheet = Math.max(
-    1,
-    Math.floor((usableWidth + KERF) / (stripHeight + KERF)),
+  const maxX = SHEET_MARGIN + usableLength;
+  const maxY = SHEET_MARGIN + usableWidth;
+
+  // Breedste onderdelen eerst, daarbinnen de langste.
+  const sorted = [...panels].sort(
+    (a, b) => b.width - a.width || b.length - a.length || a.id.localeCompare(b.id),
   );
 
-  // Langste onderdelen eerst (staanders), dan planken op restlengtes.
-  const sorted = [...panels].sort((a, b) => b.length - a.length);
+  const sheets: SheetState[] = [];
 
-  const strips: Strip[] = [];
-  let sheetCount = 0;
-
-  const newStrip = (): Strip | null => {
-    const stripIndex = strips.length % stripsPerSheet;
-    if (stripIndex === 0) sheetCount++;
-    const strip: Strip = {
-      sheet: sheetCount - 1,
-      y: SHEET_MARGIN + stripIndex * (stripHeight + KERF),
-      height: stripHeight,
-      cursorX: SHEET_MARGIN,
-      placements: [],
-    };
-    strips.push(strip);
+  const newStrip = (sheet: SheetState, height: number): Strip => {
+    const y = sheet.strips.length === 0 ? SHEET_MARGIN : sheet.nextY + KERF;
+    const strip: Strip = { sheet, y, height, cursorX: SHEET_MARGIN, columns: [], placements: [] };
+    sheet.strips.push(strip);
+    sheet.nextY = y + height;
     return strip;
   };
 
+  const stripFits = (sheet: SheetState, height: number) => {
+    const y = sheet.strips.length === 0 ? SHEET_MARGIN : sheet.nextY + KERF;
+    return y + height <= maxY + EPS;
+  };
+
+  const placeAtEnd = (strip: Strip, panel: Panel, o: Orientation) => {
+    const x = strip.cursorX + (strip.placements.length > 0 ? KERF : 0);
+    strip.placements.push({ panel, x, y: strip.y, length: o.l, width: o.w, rotated: o.rotated });
+    strip.columns.push({ x, length: o.l, top: strip.y + o.w });
+    strip.cursorX = x + o.l;
+  };
+
   for (const panel of sorted) {
-    if (panel.length > usableLength) {
-      errors.push(
-        `Onderdeel ${panel.id} (${panel.length} mm) past niet op de plaat (max ${usableLength} mm).`,
-      );
-      continue;
+    // Mogelijke oriëntaties: plat (lengte langs x) en, indien toegestaan, gedraaid.
+    const orientations: Orientation[] = [{ l: panel.length, w: panel.width, rotated: false }];
+    if (allowRotation && Math.abs(panel.length - panel.width) > EPS) {
+      orientations.push({ l: panel.width, w: panel.length, rotated: true });
     }
-    if (panel.width > stripHeight + 0.01) {
+    const fitting = orientations.filter(
+      (o) => o.l <= usableLength + EPS && o.w <= usableWidth + EPS,
+    );
+    if (fitting.length === 0) {
       errors.push(
-        `Onderdeel ${panel.id} is breder (${panel.width} mm) dan de strookhoogte ${stripHeight} mm.`,
+        `Onderdeel ${panel.id} (${panel.length} × ${panel.width} mm) past niet op de plaat (${usableLength} × ${usableWidth} mm).`,
       );
       continue;
     }
 
-    // First fit: eerste strook met genoeg restlengte.
-    let target: Strip | null = null;
-    for (const strip of strips) {
-      const needed =
-        (strip.placements.length > 0 ? KERF : 0) + panel.length;
-      if (strip.cursorX + needed <= SHEET_MARGIN + usableLength + 0.01) {
-        target = strip;
+    // 1. Stapelen op een bestaande kolom (vult anders verloren ruimte).
+    let bestCol: { strip: Strip; col: Column; o: Orientation; waste: number } | null = null;
+    for (const sheet of sheets) {
+      for (const strip of sheet.strips) {
+        for (const col of strip.columns) {
+          for (const o of fitting) {
+            if (o.l > col.length + EPS) continue;
+            if (col.top + KERF + o.w > strip.y + strip.height + EPS) continue;
+            const waste = (col.length - o.l) * o.w;
+            if (!bestCol || waste < bestCol.waste) bestCol = { strip, col, o, waste };
+          }
+        }
+      }
+    }
+    if (bestCol) {
+      const { strip, col, o } = bestCol;
+      const y = col.top + KERF;
+      strip.placements.push({ panel, x: col.x, y, length: o.l, width: o.w, rotated: o.rotated });
+      col.top = y + o.w;
+      col.length = o.l; // volgende laag mag niet langer zijn dan deze
+      continue;
+    }
+
+    // 2. Best-fit achteraan een bestaande strook: eerst zo weinig mogelijk
+    //    verloren hoogte boven het onderdeel, dan de krapste restlengte.
+    let bestStrip: { strip: Strip; o: Orientation; waste: number; rest: number } | null = null;
+    for (const sheet of sheets) {
+      for (const strip of sheet.strips) {
+        for (const o of fitting) {
+          if (o.w > strip.height + EPS) continue;
+          const needed = (strip.placements.length > 0 ? KERF : 0) + o.l;
+          const rest = maxX - (strip.cursorX + needed);
+          if (rest < -EPS) continue;
+          const waste = (strip.height - o.w) * o.l;
+          if (
+            !bestStrip ||
+            waste < bestStrip.waste - EPS ||
+            (Math.abs(waste - bestStrip.waste) <= EPS && rest < bestStrip.rest - EPS)
+          ) {
+            bestStrip = { strip, o, waste, rest };
+          }
+        }
+      }
+    }
+    if (bestStrip) {
+      placeAtEnd(bestStrip.strip, panel, bestStrip.o);
+      continue;
+    }
+
+    // 3. Nieuwe strook (plat: laagste strookhoogte) op een bestaande plaat
+    //    met genoeg restbreedte, anders 4. een nieuwe plaat.
+    const flat = [...fitting].sort((a, b) => a.w - b.w)[0];
+    let target: SheetState | null = null;
+    for (const sheet of sheets) {
+      if (stripFits(sheet, flat.w)) {
+        target = sheet;
         break;
       }
     }
-    if (!target) target = newStrip();
-    if (!target) continue;
-
-    if (target.placements.length > 0) target.cursorX += KERF;
-    target.placements.push({
-      panel,
-      x: target.cursorX,
-      y: target.y,
-      length: panel.length,
-      width: panel.width,
-    });
-    target.cursorX += panel.length;
+    if (!target) {
+      target = { index: sheets.length, nextY: SHEET_MARGIN, strips: [] };
+      sheets.push(target);
+    }
+    placeAtEnd(newStrip(target, flat.w), panel, flat);
   }
 
-  const sheets: NestedSheet[] = [];
-  for (let s = 0; s < sheetCount; s++) {
-    sheets.push({
-      index: s,
-      material,
-      sheetLength,
-      sheetWidth,
-      placements: strips
-        .filter((st) => st.sheet === s)
-        .flatMap((st) => st.placements),
-    });
-  }
-  return sheets;
+  return sheets.map((s) => ({
+    index: s.index,
+    material,
+    sheetLength,
+    sheetWidth,
+    placements: s.strips.flatMap((st) => st.placements),
+    strips: s.strips.map((st) => ({
+      y: st.y,
+      height: st.height,
+      usedLength: st.cursorX - SHEET_MARGIN,
+    })),
+  }));
 }
 
-export function nestPanels(panels: Panel[], depth: number): NestingResult {
+/**
+ * Benut deel van een plaat: per strook de hoogte × de gebruikte lengte,
+ * gedeeld door het bruikbare plaatoppervlak. Het restant van de plaat
+ * (boven de laatste strook en achter de laatste onderdelen) blijft over
+ * als bruikbare reststrook.
+ */
+function usedFraction(sheet: NestedSheet): number {
+  const usable =
+    (sheet.sheetLength - 2 * SHEET_MARGIN) * (sheet.sheetWidth - 2 * SHEET_MARGIN);
+  const used = sheet.strips.reduce((sum, st) => sum + (st.height + KERF) * st.usedLength, 0);
+  return Math.min(1, used / usable);
+}
+
+export interface NestingOptions {
+  /** 18mm-onderdelen mogen 90° gedraaid worden (nerfloos materiaal). */
+  allowRotation?: boolean;
+}
+
+export function nestPanels(panels: Panel[], options: NestingOptions = {}): NestingResult {
   const errors: string[] = [];
 
   const sheet18 = panels.filter((p) => p.material === "plaat18");
@@ -152,15 +264,13 @@ export function nestPanels(panels: Panel[], depth: number): NestingResult {
     "plaat18",
     SHEET_LENGTH,
     SHEET_WIDTH,
-    depth,
+    options.allowRotation ?? false,
     errors,
   );
-
-  // HDF apart nesten; rugpanelen zijn per rij even hoog, strook = grootste breedte.
-  const hdfStrip = hdf.reduce((mx, p) => Math.max(mx, p.width), 0);
+  // HDF-rugpanelen: geen nerf en geen bewerkingen, dus altijd draaibaar.
   const hdfSheets =
     hdf.length > 0
-      ? nestMaterial(hdf, "hdf4", HDF_SHEET_LENGTH, HDF_SHEET_WIDTH, hdfStrip, errors)
+      ? nestMaterial(hdf, "hdf4", HDF_SHEET_LENGTH, HDF_SHEET_WIDTH, true, errors)
       : [];
 
   // Yield en platenbreuk voor de 18mm-plaat.
@@ -170,17 +280,7 @@ export function nestPanels(panels: Panel[], depth: number): NestingResult {
   let sheetCountFraction = 0;
   if (sheets.length > 0) {
     const last = sheets[sheets.length - 1];
-    const stripsPerSheet = stripsPerSheetForDepth(depth);
-    const usedStrips = new Set(last.placements.map((pl) => pl.y)).size;
-    const lastMaxX = last.placements.reduce(
-      (mx, pl) => Math.max(mx, pl.x + pl.length),
-      SHEET_MARGIN,
-    );
-    const lastFraction =
-      ((usedStrips - 1) + (lastMaxX - SHEET_MARGIN) / USABLE_LENGTH) /
-      stripsPerSheet;
-    sheetCountFraction =
-      sheets.length - 1 + Math.min(1, Math.max(lastFraction, 0.05));
+    sheetCountFraction = sheets.length - 1 + Math.max(0.05, usedFraction(last));
   }
 
   const yieldPercent =

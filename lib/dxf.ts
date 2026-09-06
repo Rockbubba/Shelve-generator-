@@ -49,7 +49,50 @@ export type BedOp =
   | { kind: "rect"; layer: string; secondary: boolean; x: number; y: number; w: number; h: number; radius: number }
   | { kind: "path"; layer: string; secondary: boolean; points: [number, number][] }
   | { kind: "circle"; layer: string; secondary: boolean; cx: number; cy: number; r: number }
-  | { kind: "text"; layer: string; secondary: boolean; x: number; y: number; height: number; text: string };
+  | { kind: "text"; layer: string; secondary: boolean; x: number; y: number; height: number; text: string; rotation?: number };
+
+/**
+ * Buitencontour van een geplaatst onderdeel in plaatcoördinaten. Bij een
+ * gedraaid onderdeel (nesting) wordt het bed-frame 90° linksom gedraaid:
+ * (x, y) → (W − y, x), zodat de lengte langs de plaat-y komt te liggen.
+ */
+export function placementContour(pl: Placement): [number, number][] {
+  const W = pl.panel.width;
+  return panelContourInBedFrame(pl.panel).map(([x, y]) =>
+    pl.rotated
+      ? ([pl.x + (W - y), pl.y + x] as [number, number])
+      : ([pl.x + x, pl.y + y] as [number, number]),
+  );
+}
+
+/** Bewerkingen van een geplaatst onderdeel in plaatcoördinaten (zie placementContour). */
+export function placementOps(pl: Placement): BedOp[] {
+  const W = pl.panel.width;
+  const ops = panelOpsInBedFrame(pl.panel);
+  if (!pl.rotated) {
+    return ops.map((op) => {
+      if (op.kind === "rect") return { ...op, x: pl.x + op.x, y: pl.y + op.y };
+      if (op.kind === "circle") return { ...op, cx: pl.x + op.cx, cy: pl.y + op.cy };
+      if (op.kind === "path")
+        return { ...op, points: op.points.map(([x, y]) => [pl.x + x, pl.y + y] as [number, number]) };
+      return { ...op, x: pl.x + op.x, y: pl.y + op.y };
+    });
+  }
+  const rot = (x: number, y: number): [number, number] => [pl.x + (W - y), pl.y + x];
+  return ops.map((op) => {
+    if (op.kind === "rect") {
+      const [x, y] = rot(op.x, op.y + op.h);
+      return { ...op, x, y, w: op.h, h: op.w };
+    }
+    if (op.kind === "circle") {
+      const [cx, cy] = rot(op.cx, op.cy);
+      return { ...op, cx, cy };
+    }
+    if (op.kind === "path") return { ...op, points: op.points.map(([x, y]) => rot(x, y)) };
+    const [x, y] = rot(op.x, op.y);
+    return { ...op, x, y, rotation: 90 };
+  });
+}
 
 /** As waarover dit paneel wordt omgeklapt voor de tweede zijde. */
 export function flipAxis(panel: Panel): "kort" | "lang" {
@@ -157,13 +200,14 @@ class DxfBuilder {
     this.push(0, "CIRCLE", 8, layer, 10, fmt(cx), 20, fmt(cy), 30, 0, 40, fmt(radius));
   }
 
-  text(layer: string, x: number, y: number, height: number, value: string) {
+  text(layer: string, x: number, y: number, height: number, value: string, rotation = 0) {
     this.usedLayers.add(layer);
     this.push(
       0, "TEXT", 8, layer,
       10, fmt(x), 20, fmt(y), 30, 0,
       40, fmt(height),
       1, value,
+      50, fmt(rotation),
       72, 1, // horizontaal gecentreerd
       11, fmt(x), 21, fmt(y), 31, 0,
       73, 2, // verticaal gecentreerd
@@ -286,29 +330,15 @@ export function roundedRectContour(
   return pts;
 }
 
-function emitBedOp(dxf: DxfBuilder, placement: Placement, op: BedOp) {
+function emitBedOp(dxf: DxfBuilder, op: BedOp) {
   if (op.kind === "rect") {
-    dxf.polyline(
-      op.layer,
-      roundedRectContour(
-        placement.x + op.x,
-        placement.y + op.y,
-        op.w,
-        op.h,
-        op.radius,
-      ),
-    );
+    dxf.polyline(op.layer, roundedRectContour(op.x, op.y, op.w, op.h, op.radius));
   } else if (op.kind === "path") {
-    dxf.polyline(
-      op.layer,
-      op.points.map(
-        ([px, py]) => [placement.x + px, placement.y + py] as [number, number],
-      ),
-    );
+    dxf.polyline(op.layer, op.points);
   } else if (op.kind === "circle") {
-    dxf.circle(op.layer, placement.x + op.cx, placement.y + op.cy, op.r);
+    dxf.circle(op.layer, op.cx, op.cy, op.r);
   } else {
-    dxf.text(op.layer, placement.x + op.x, placement.y + op.y, op.height, op.text);
+    dxf.text(op.layer, op.x, op.y, op.height, op.text, op.rotation ?? 0);
   }
 }
 
@@ -325,13 +355,8 @@ export function sheetToDxf(sheet: NestedSheet): string {
   ]);
 
   for (const placement of sheet.placements) {
-    const contour = panelContourInBedFrame(placement.panel).map(
-      ([x, y]) => [placement.x + x, placement.y + y] as [number, number],
-    );
-    dxf.polyline("CONTOUR", contour);
-    for (const op of panelOpsInBedFrame(placement.panel)) {
-      emitBedOp(dxf, placement, op);
-    }
+    dxf.polyline("CONTOUR", placementContour(placement));
+    for (const op of placementOps(placement)) emitBedOp(dxf, op);
   }
   return dxf.build();
 }

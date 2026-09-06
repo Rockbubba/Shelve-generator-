@@ -2,7 +2,7 @@
 
 import { formatMm } from "@/lib/config";
 import { NestedSheet, NestingResult, Placement } from "@/lib/nesting";
-import { panelContourInBedFrame, panelOpsInBedFrame } from "@/lib/dxf";
+import { placementContour, placementOps } from "@/lib/dxf";
 
 /** Kleur per bewerkingstype, gelijk aan de DXF-laagkleuren. */
 function opColor(layer: string): string {
@@ -21,7 +21,7 @@ function opColor(layer: string): string {
 function PlacementOps({ pl, sheetW }: { pl: Placement; sheetW: number }) {
   return (
     <>
-      {panelOpsInBedFrame(pl.panel).map((op, i) => {
+      {placementOps(pl).map((op, i) => {
         if (op.kind === "text") return null;
         const dash = op.secondary ? "14 10" : undefined;
         const color = opColor(op.layer);
@@ -29,8 +29,8 @@ function PlacementOps({ pl, sheetW }: { pl: Placement; sheetW: number }) {
           return (
             <rect
               key={i}
-              x={pl.x + op.x}
-              y={sheetW - (pl.y + op.y + op.h)}
+              x={op.x}
+              y={sheetW - (op.y + op.h)}
               width={op.w}
               height={op.h}
               rx={op.radius || undefined}
@@ -46,9 +46,7 @@ function PlacementOps({ pl, sheetW }: { pl: Placement; sheetW: number }) {
           return (
             <polygon
               key={i}
-              points={op.points
-                .map(([px, py]) => `${pl.x + px},${sheetW - (pl.y + py)}`)
-                .join(" ")}
+              points={op.points.map(([px, py]) => `${px},${sheetW - py}`).join(" ")}
               fill={color}
               fillOpacity={0.25}
               stroke={color}
@@ -60,8 +58,8 @@ function PlacementOps({ pl, sheetW }: { pl: Placement; sheetW: number }) {
         return (
           <circle
             key={i}
-            cx={pl.x + op.cx}
-            cy={sheetW - (pl.y + op.cy)}
+            cx={op.cx}
+            cy={sheetW - op.cy}
             r={Math.max(op.r, 9)}
             fill="none"
             stroke={color}
@@ -84,9 +82,22 @@ function SheetSvg({ sheet }: { sheet: NestedSheet }) {
       aria-label={`Plaat ${sheet.index + 1}`}
     >
       <rect x={0} y={0} width={L} height={W} fill="#fafafa" stroke="#999" strokeWidth={4} />
+      {sheet.strips.map((st, i) => (
+        <rect
+          key={`strip-${i}`}
+          x={10}
+          y={W - (st.y + st.height)}
+          width={L - 20}
+          height={st.height}
+          fill="none"
+          stroke="#bbb"
+          strokeWidth={2}
+          strokeDasharray="12 12"
+        />
+      ))}
       {sheet.placements.map((pl) => {
-        const pts = panelContourInBedFrame(pl.panel)
-          .map(([x, y]) => `${pl.x + x},${W - (pl.y + y)}`)
+        const pts = placementContour(pl)
+          .map(([x, y]) => `${x},${W - y}`)
           .join(" ");
         return (
           <g key={pl.panel.id}>
@@ -107,6 +118,7 @@ function SheetSvg({ sheet }: { sheet: NestedSheet }) {
               opacity={0.75}
             >
               {pl.panel.id}
+              {pl.rotated ? " ↻" : ""}
             </text>
           </g>
         );

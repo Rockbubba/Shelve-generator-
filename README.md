@@ -38,9 +38,19 @@ De gevraagde kastbreedte wordt stilletjes (± max 12 mm) aangepast zodat
 `m` planken plus freesbanen een strook van 2420 mm exact vullen; ver van
 zo'n grens blijft de gevraagde maat staan en toont de UI de restlengte.
 
-Onderdelen worden first-fit-decreasing over de stroken verdeeld: staanders
-(langste onderdelen) eerst, planken op de restlengtes. HDF-rugpanelen
-nesten apart op een eigen 4mm-plaat.
+De nesting zelf (`lib/nesting.ts`) is strookgebaseerd maar met variabele
+strookhoogtes: onderdelen worden op breedte (aflopend) en lengte gesorteerd,
+elke strook krijgt de hoogte van het breedste onderdeel erin, smallere
+onderdelen (plint, rugpanelen van gewone vakken naast een samengevoegd vak)
+worden binnen een strook op elkaar gestapeld en gaan anders naar een lage
+strook in de restbreedte van een plaat. Plaatsing is best-fit: een onderdeel
+gaat naar de strook waar het het krapst past, zodat lange rests bewaard
+blijven. Onderdelen mogen 90° gedraaid worden als dat beter past: HDF-
+rugpanelen altijd, 18mm-onderdelen alleen bij nerfloze materialen (MDF,
+spaanplaat, HPL; multiplex niet). Contour en bewerkingen draaien in DXF en
+preview mee (gedraaide onderdelen zijn met ↻ gemarkeerd). De preview tekent
+de stroken gestippeld mee. HDF-rugpanelen nesten apart op een eigen
+4mm-plaat.
 
 ### Constructie
 
@@ -193,6 +203,9 @@ boringen op de juiste plek zitten.
   assenstelsel (muurlijn = 0) gerekend en per onderdeel naar het eigen
   CNC-frame vertaald, zodat dado's en boringen aan beide kanten van een naad
   exact samenvallen.
+- **Plint**: 80 mm hoog tussen de buitenste staanders; standaard 40 mm
+  teruggelegd t.o.v. het ondiepste punt van de voorkant, maar ook vlak met
+  de voorkant of op een eigen maat (0–150 mm) te zetten.
 - **Bestaande muurplint**: hoogte en diepte opgeven; staanders krijgen
   achter-onder een inkeping en planken onder de plinthoogte worden met de
   plintdiepte ingekort (dado's beginnen daar later). De kast valt zo strak

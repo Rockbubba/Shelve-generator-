@@ -5,6 +5,9 @@ import {
   CABINET_COLORS,
   CabinetConfig,
   DEFAULT_CONFIG,
+  MAX_PLINTH_SETBACK,
+  PLINTH_HEIGHT,
+  PLINTH_SETBACK,
   DEPTH_OPTIONS,
   FrontProfile,
   MIN_PROFILE_DEPTH,
@@ -51,8 +54,8 @@ export default function Configurator() {
 
   const model = useMemo(() => buildCabinetModel(config), [config]);
   const nesting = useMemo(
-    () => nestPanels(model.panels, config.depth),
-    [model, config.depth],
+    () => nestPanels(model.panels, { allowRotation: !materialById(config.materialId).nerf }),
+    [model, config.materialId],
   );
 
   const admin = useAdminSettings();
@@ -67,6 +70,14 @@ export default function Configurator() {
     [model, nesting, admin, config.materialId, config.nominalThickness],
   );
   const costLines = useMemo(() => costSummaryLines(model, costs), [model, costs]);
+
+  const [customPlinth, setCustomPlinth] = useState(false);
+  const plinthMode: "standaard" | "flush" | "eigen" =
+    customPlinth || (config.plinthSetback !== 0 && config.plinthSetback !== PLINTH_SETBACK)
+      ? "eigen"
+      : config.plinthSetback === 0
+        ? "flush"
+        : "standaard";
 
   const isCustomDepth = !DEPTH_OPTIONS.some(
     (o) => Math.abs(o.depth - config.depth) < 0.05,
@@ -607,6 +618,39 @@ export default function Configurator() {
             value={config.base}
             onChange={(base) => update({ base })}
           />
+          {config.base === "plint" && (
+            <div className="rounded-xl bg-neutral-50 p-3">
+              <Segmented
+                label="Plint t.o.v. voorkant"
+                options={[
+                  { value: "standaard", label: "Terug", sub: `${PLINTH_SETBACK} mm` },
+                  { value: "flush", label: "Vlak", sub: "gelijk met voorkant" },
+                  { value: "eigen", label: "Eigen", sub: "vrije maat" },
+                ]}
+                value={plinthMode}
+                onChange={(mode) => {
+                  setCustomPlinth(mode === "eigen");
+                  if (mode === "standaard") update({ plinthSetback: PLINTH_SETBACK });
+                  else if (mode === "flush") update({ plinthSetback: 0 });
+                }}
+              />
+              {plinthMode === "eigen" && (
+                <Stepper
+                  label="Plint terugliggend"
+                  value={config.plinthSetback}
+                  min={0}
+                  max={MAX_PLINTH_SETBACK}
+                  step={5}
+                  hint="0 = vlak met de voorkant"
+                  onChange={(plinthSetback) => update({ plinthSetback })}
+                />
+              )}
+              <p className="mt-1 text-xs text-neutral-500">
+                Plint van {PLINTH_HEIGHT} mm hoog tussen de buitenste staanders; bij
+                een voorkantprofiel ligt hij achter het ondiepste punt.
+              </p>
+            </div>
+          )}
           {config.base === "pootjes" && (
             <div className="rounded-xl bg-neutral-50 p-3">
               <Segmented

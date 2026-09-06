@@ -1049,7 +1049,8 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
   // ---- Plint ----------------------------------------------------------------
   if (config.base === "plint") {
     const plintLen = round1(W - 2 * t - 2);
-    // Plint achter het ondiepste punt van de voorkant.
+    // Plint achter (of, bij 0, vlak met) het ondiepste punt van de voorkant.
+    const setback = Math.max(0, config.plinthSetback ?? PLINTH_SETBACK);
     let minFront = D;
     for (let i = 0; i <= columns; i++) minFront = Math.min(minFront, staanderFront(i));
     panels.push({
@@ -1065,7 +1066,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
       place: {
         x: t + 1,
         y: 0,
-        z: minFront - PLINTH_SETBACK - t,
+        z: minFront - setback - t,
         w: plintLen,
         h: PLINTH_HEIGHT,
         d: t,

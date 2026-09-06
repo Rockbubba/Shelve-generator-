@@ -16,7 +16,7 @@ import {
   RectOp,
 } from "../model";
 import { nestPanels } from "../nesting";
-import { panelContour, panelContourInBedFrame, sheetToDxf } from "../dxf";
+import { panelContour, panelContourInBedFrame, placementContour, placementOps, sheetToDxf } from "../dxf";
 import { estimateMachining, MACHINE } from "../costing";
 
 /** Acceptatiekast: 1800 × 2000 × ~398, 4 kolommen × 5 rijen. */
@@ -126,7 +126,7 @@ describe("wissel dado ↔ cabineo (acceptatiecriterium 5)", () => {
 
 describe("nesting (acceptatiecriterium 2)", () => {
   const model = buildCabinetModel(ACCEPT);
-  const nesting = nestPanels(model.panels, ACCEPT.depth);
+  const nesting = nestPanels(model.panels);
 
   it("nest alle 18mm-onderdelen zonder fouten", () => {
     expect(nesting.errors).toHaveLength(0);
@@ -172,7 +172,7 @@ describe("nesting (acceptatiecriterium 2)", () => {
 
 describe("dxf-output (acceptatiecriterium 3)", () => {
   const model = buildCabinetModel(ACCEPT);
-  const nesting = nestPanels(model.panels, ACCEPT.depth);
+  const nesting = nestPanels(model.panels);
   const dxf = sheetToDxf(nesting.sheets[0]);
 
   it("bevat header, lagen en gesloten polylines in mm (R12)", () => {
@@ -202,7 +202,7 @@ describe("dxf-output (acceptatiecriterium 3)", () => {
 
   it("cabineo-boutgaten: binnenstaanders doorlopend, buitenstaanders blind", () => {
     const cab = buildCabinetModel({ ...ACCEPT, joinery: "cabineo" });
-    const cabNesting = nestPanels(cab.panels, ACCEPT.depth);
+    const cabNesting = nestPanels(cab.panels);
     const all = cabNesting.sheets.map((s) => sheetToDxf(s)).join("\n");
     expect(all).toContain("BOOR_5MM_DOOR");
     expect(all).toContain("BOOR_5MM_D8"); // buitenstaanders: blind, officiële diepte
@@ -303,7 +303,7 @@ describe("éénzijdig frezen", () => {
 
   it("cabineo-kast is volledig éénzijdig", () => {
     const cab = buildCabinetModel({ ...ACCEPT, joinery: "cabineo" });
-    const cabNesting = nestPanels(cab.panels, ACCEPT.depth);
+    const cabNesting = nestPanels(cab.panels);
     const all = cabNesting.sheets.map((s) => sheetToDxf(s)).join("\n");
     expect(all).not.toMatch(/_B\r?$/m);
     // Boutgaten van linker- en rechtervak raken elkaar niet: verschillende
@@ -345,7 +345,7 @@ describe("éénzijdig frezen", () => {
 describe("eigen kastdiepte", () => {
   it("diepte 200 mm nest in 5 stroken en respecteert de marges", () => {
     const model = buildCabinetModel({ ...ACCEPT, depth: 200 });
-    const nesting = nestPanels(model.panels, 200);
+    const nesting = nestPanels(model.panels);
     expect(nesting.errors).toHaveLength(0);
     for (const p of model.panels.filter((x) => x.material === "plaat18")) {
       expect(p.width).toBeLessThanOrEqual(200);
@@ -394,7 +394,7 @@ describe("materiaal, cabineo-maat en kosten", () => {
       nominalThickness: 21,
       thickness: 21,
     });
-    const nesting = nestPanels(model.panels, ACCEPT.depth);
+    const nesting = nestPanels(model.panels);
     const all = nesting.sheets.map((s) => sheetToDxf(s)).join("\n");
     expect(all).toContain("BOOR_5MM_D12");
     expect(model.warnings.some((w) => w.includes("Cabineo 12"))).toBe(false);
@@ -426,7 +426,7 @@ describe("materiaal, cabineo-maat en kosten", () => {
 
   it("machinetijd-schatting geeft plausibele waardes en rekent prijzen mee", () => {
     const model = buildCabinetModel(ACCEPT);
-    const nesting = nestPanels(model.panels, ACCEPT.depth);
+    const nesting = nestPanels(model.panels);
     const est = estimateMachining(model, nesting, MACHINE, 50);
     expect(est.minutes).toBeGreaterThan(10);
     expect(est.minutes).toBeLessThan(600);
@@ -508,7 +508,7 @@ describe("vakhoogtes per kolom (plankverschuiving)", () => {
     const col0 = model.cells.filter((c) => c.col === 0);
     for (const c of col0) expect(c.h).toBeGreaterThanOrEqual(120 - 0.1);
     // Nesting blijft foutloos (planklengtes ongewijzigd).
-    expect(nestPanels(model.panels, ACCEPT.depth).errors).toHaveLength(0);
+    expect(nestPanels(model.panels).errors).toHaveLength(0);
   });
 });
 
@@ -541,7 +541,7 @@ describe("voorkantprofiel", () => {
 
     // Nesting blijft foutloos; DXF-contour van de ondersteboven liggende
     // plank is over de korte zijde gespiegeld.
-    const nesting = nestPanels(model.panels, ACCEPT.depth);
+    const nesting = nestPanels(model.panels);
     expect(nesting.errors).toHaveLength(0);
     const bed = panelContourInBedFrame(plank);
     expect(
@@ -585,7 +585,7 @@ describe("achterzijde: scheve muur en muurplint", () => {
     )[1];
     const gPlank = Math.round((plankRightHole.cy + plank.place.z) * 10) / 10;
     expect(s2Holes).toContain(gPlank);
-    expect(nestPanels(model.panels, ACCEPT.depth).errors).toHaveLength(0);
+    expect(nestPanels(model.panels).errors).toHaveLength(0);
   });
 
   it("muurplint: inkeping achter-onder in staanders en ingekorte onderste planken", () => {
@@ -661,7 +661,7 @@ describe("kolombreedtes en volledige achterwand", () => {
     // Buitenstaanders vast, totale breedte gelijk.
     expect(model.panels.find((p) => p.id === "S1")!.place.x).toBe(0);
     expect(model.snappedWidth).toBe(base.snappedWidth);
-    expect(nestPanels(model.panels, ACCEPT.depth).errors).toHaveLength(0);
+    expect(nestPanels(model.panels).errors).toHaveLength(0);
   });
 
   it("kolombreedte wordt begrensd op de minimale vakbreedte", () => {
@@ -703,7 +703,7 @@ describe("kolombreedtes en volledige achterwand", () => {
     expect(centers.some((c) => Math.abs(c - seam) < 0.6)).toBe(true);
     // Alle vakken tellen als rug; nesting van HDF foutloos.
     expect(model.cells.every((c) => c.fill === "rug")).toBe(true);
-    const nesting = nestPanels(model.panels, ACCEPT.depth);
+    const nesting = nestPanels(model.panels);
     expect(nesting.errors).toHaveLength(0);
     expect(nesting.hdfSheets.length).toBeGreaterThan(0);
     expect(model.hardware.some((h) => h.name.startsWith("HDF achterwand"))).toBe(true);
@@ -733,5 +733,187 @@ describe("stabiliteit en modules", () => {
     for (const s of staanders) {
       expect(s.length).toBeLessThanOrEqual(2400);
     }
+  });
+});
+
+/** Geen twee onderdelen op dezelfde plaat overlappen (incl. freesbaan). */
+function expectNoOverlap(sheets: ReturnType<typeof nestPanels>["sheets"]) {
+  for (const sheet of sheets) {
+    const pls = sheet.placements;
+    for (let i = 0; i < pls.length; i++) {
+      for (let j = i + 1; j < pls.length; j++) {
+        const a = pls[i];
+        const b = pls[j];
+        const sepX =
+          a.x + a.length + KERF <= b.x + 0.01 || b.x + b.length + KERF <= a.x + 0.01;
+        const sepY =
+          a.y + a.width + KERF <= b.y + 0.01 || b.y + b.width + KERF <= a.y + 0.01;
+        expect(sepX || sepY, `${a.panel.id} overlapt ${b.panel.id}`).toBe(true);
+      }
+      expect(pls[i].x + pls[i].length).toBeLessThanOrEqual(sheet.sheetLength - SHEET_MARGIN + 0.01);
+      expect(pls[i].y + pls[i].width).toBeLessThanOrEqual(sheet.sheetWidth - SHEET_MARGIN + 0.01);
+    }
+  }
+}
+
+describe("slimmere nesting: variabele stroken, stapelen, restbreedte", () => {
+  it("plaatst nooit overlappende onderdelen", () => {
+    const configs: Partial<CabinetConfig>[] = [
+      {},
+      { base: "plint" },
+      { depth: 200, base: "plint" },
+      { backTaper: { left: 300, right: 0 }, base: "plint" },
+      { omittedShelves: { "0:1:2": true, "0:2:3": true } },
+      { columnOffsets: { "1": 80, "3": -60 }, rugMode: "volledig" },
+    ];
+    for (const patch of configs) {
+      const nesting = nestPanels(buildCabinetModel({ ...ACCEPT, ...patch }).panels);
+      expect(nesting.errors).toHaveLength(0);
+      expectNoOverlap(nesting.sheets);
+      expectNoOverlap(nesting.hdfSheets);
+    }
+  });
+
+  it("gebruikt de restbreedte van een plaat voor de plint (diepte 200: 2 platen i.p.v. 3)", () => {
+    const model = buildCabinetModel({ ...ACCEPT, depth: 200, base: "plint" });
+    const nesting = nestPanels(model.panels);
+    expect(nesting.sheets).toHaveLength(2);
+    const plint = nesting.sheets
+      .flatMap((s) => s.placements.map((pl) => ({ ...pl, sheet: s.index })))
+      .find((pl) => pl.panel.type === "plint")!;
+    // 5 stroken van 200 + freesbanen = 1032 → de plint ligt in de rest daarboven.
+    expect(plint.y).toBeGreaterThanOrEqual(SHEET_MARGIN + 5 * 208 - 0.01);
+    expect(plint.y + plint.width).toBeLessThanOrEqual(SHEET_WIDTH - SHEET_MARGIN + 0.01);
+  });
+
+  it("geeft smallere onderdelen een lage strook (verloop 300: 3 platen i.p.v. 4)", () => {
+    const model = buildCabinetModel({ ...ACCEPT, backTaper: { left: 300, right: 0 } });
+    const nesting = nestPanels(model.panels);
+    expect(nesting.errors).toHaveLength(0);
+    expect(nesting.sheets).toHaveLength(3);
+    expect(nesting.yieldPercent).toBeGreaterThan(55);
+  });
+
+  it("stapelt rugpanelen van gewone vakken in de strook van een samengevoegd vak", () => {
+    const model = buildCabinetModel({
+      ...ACCEPT,
+      omittedShelves: { "0:1:2": true },
+      cellFills: { "0:1:1": "rug", "0:1:2": "rug", "0:2:1": "rug", "0:2:2": "rug", "0:3:1": "rug" },
+    });
+    const nesting = nestPanels(model.panels);
+    expect(nesting.hdfSheets).toHaveLength(1);
+    const pls = nesting.hdfSheets[0].placements;
+    const merged = pls.reduce((a, b) => (b.width > a.width ? b : a));
+    // Minstens één gewoon rugpaneel ligt gestapeld boven een ander (zelfde x, hogere y).
+    const stacked = pls.some((a) => pls.some((b) => b !== a && b.x === a.x && b.y > a.y));
+    expect(stacked).toBe(true);
+    // Strookhoogte volgt het samengevoegde vak; alles binnen één strook + evt. lage strook.
+    expect(nesting.hdfSheets[0].strips[0].height).toBeCloseTo(merged.width, 1);
+    expectNoOverlap(nesting.hdfSheets);
+  });
+
+  it("kiest best-fit: de laatste plaat houdt een bruikbare reststrook over", () => {
+    const nesting = nestPanels(buildCabinetModel({ ...ACCEPT, base: "plint" }).panels);
+    const last = nesting.sheets[nesting.sheets.length - 1];
+    expect(nesting.sheetCountFraction).toBeLessThan(nesting.sheets.length);
+    expect(last.strips.every((st) => st.usedLength <= SHEET_LENGTH - 2 * SHEET_MARGIN + 0.01)).toBe(true);
+  });
+});
+
+describe("plint: teruggelegd, vlak of eigen maat", () => {
+  const minFrontOf = (model: ReturnType<typeof buildCabinetModel>) =>
+    Math.min(...model.panels.filter((p) => p.type === "staander").map((p) => p.place.z + p.place.d));
+
+  it("ligt standaard 40 mm terug", () => {
+    const model = buildCabinetModel({ ...ACCEPT, base: "plint" });
+    const plint = model.panels.find((p) => p.type === "plint")!;
+    expect(plint.place.z + plint.place.d).toBeCloseTo(minFrontOf(model) - 40, 1);
+  });
+
+  it("kan vlak met de voorkant (0) en op eigen maat", () => {
+    const flush = buildCabinetModel({ ...ACCEPT, base: "plint", plinthSetback: 0 });
+    const pf = flush.panels.find((p) => p.type === "plint")!;
+    expect(pf.place.z + pf.place.d).toBeCloseTo(minFrontOf(flush), 1);
+
+    const eigen = buildCabinetModel({ ...ACCEPT, base: "plint", plinthSetback: 65 });
+    const pe = eigen.panels.find((p) => p.type === "plint")!;
+    expect(pe.place.z + pe.place.d).toBeCloseTo(minFrontOf(eigen) - 65, 1);
+  });
+
+  it("volgt het ondiepste punt bij een voorkantprofiel", () => {
+    const model = buildCabinetModel({
+      ...ACCEPT,
+      base: "plint",
+      plinthSetback: 0,
+      frontProfile: { type: "bol", amplitude: 60, periodes: 2, mirror: false },
+    });
+    const plint = model.panels.find((p) => p.type === "plint")!;
+    expect(plint.place.z + plint.place.d).toBeCloseTo(minFrontOf(model), 1);
+    expect(minFrontOf(model)).toBeLessThan(ACCEPT.depth);
+  });
+});
+
+describe("gedraaide onderdelen in de nesting", () => {
+  const model = buildCabinetModel({
+    ...ACCEPT,
+    omittedShelves: { "0:1:2": true },
+    cellFills: { "0:1:1": "rug", "0:1:2": "rug", "0:2:1": "rug", "0:2:2": "rug", "0:3:1": "rug" },
+  });
+
+  it("draait HDF-rugpanelen zodat ze naast een samengevoegd paneel op één plaat passen", () => {
+    const nesting = nestPanels(model.panels);
+    expect(nesting.hdfSheets).toHaveLength(1);
+    const rotated = nesting.hdfSheets[0].placements.filter((pl) => pl.rotated);
+    expect(rotated.length).toBeGreaterThan(0);
+    for (const pl of rotated) {
+      expect(pl.length).toBeCloseTo(pl.panel.width, 1);
+      expect(pl.width).toBeCloseTo(pl.panel.length, 1);
+    }
+  });
+
+  it("contour en bewerkingen van een gedraaid onderdeel liggen binnen de voetafdruk", () => {
+    const nesting = nestPanels(model.panels, { allowRotation: true });
+    for (const sheet of [...nesting.sheets, ...nesting.hdfSheets]) {
+      for (const pl of sheet.placements) {
+        const inside = (x: number, y: number) =>
+          x >= pl.x - 0.01 && x <= pl.x + pl.length + 0.01 && y >= pl.y - 0.01 && y <= pl.y + pl.width + 0.01;
+        for (const [x, y] of placementContour(pl)) expect(inside(x, y), `${pl.panel.id} contour`).toBe(true);
+        for (const op of placementOps(pl)) {
+          if (op.kind === "rect") {
+            expect(inside(op.x, op.y), `${pl.panel.id} rect`).toBe(true);
+            expect(inside(op.x + op.w, op.y + op.h), `${pl.panel.id} rect`).toBe(true);
+          } else if (op.kind === "circle") {
+            expect(inside(op.cx, op.cy), `${pl.panel.id} circle`).toBe(true);
+          } else if (op.kind === "path") {
+            for (const [x, y] of op.points) expect(inside(x, y), `${pl.panel.id} path`).toBe(true);
+          } else {
+            expect(inside(op.x, op.y), `${pl.panel.id} text`).toBe(true);
+            if (pl.rotated) expect(op.rotation).toBe(90);
+          }
+        }
+      }
+    }
+  });
+
+  it("draait een 18mm-plank correct: dado-inkeping en boringen wisselen van as", () => {
+    const plank = model.panels.find((p) => p.type === "plank")!;
+    const flat = { panel: plank, x: 100, y: 50, length: plank.length, width: plank.width, rotated: false };
+    const rot = { panel: plank, x: 100, y: 50, length: plank.width, width: plank.length, rotated: true };
+    const circlesFlat = placementOps(flat).filter((o) => o.kind === "circle") as Extract<ReturnType<typeof placementOps>[number], { kind: "circle" }>[];
+    const circlesRot = placementOps(rot).filter((o) => o.kind === "circle") as typeof circlesFlat;
+    expect(circlesRot).toHaveLength(circlesFlat.length);
+    // (x, y) → (W − y, x): een boring op relatieve (bx, by) komt op (W − by, bx).
+    for (const c of circlesFlat) {
+      const bx = c.cx - flat.x;
+      const by = c.cy - flat.y;
+      const match = circlesRot.find(
+        (r) => Math.abs(r.cx - (rot.x + plank.width - by)) < 0.01 && Math.abs(r.cy - (rot.y + bx)) < 0.01,
+      );
+      expect(match, `boring ${bx},${by}`).toBeDefined();
+    }
+    // De DXF van een plaat met gedraaid onderdeel blijft geldig R12.
+    const dxf = sheetToDxf({ index: 0, material: "plaat18", sheetLength: 2440, sheetWidth: 1220, placements: [rot], strips: [] });
+    expect(dxf).toContain("AC1009");
+    expect(dxf).toMatch(/\r?\n50\r?\n90/);
   });
 });
