@@ -33,6 +33,7 @@ function PlacementOps({ pl, sheetW }: { pl: Placement; sheetW: number }) {
               y={sheetW - (pl.y + op.y + op.h)}
               width={op.w}
               height={op.h}
+              rx={op.radius || undefined}
               fill={color}
               fillOpacity={0.25}
               stroke={color}

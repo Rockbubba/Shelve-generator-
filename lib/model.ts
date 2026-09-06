@@ -21,6 +21,7 @@ import {
   CABINEO_BOLT_DIAMETER,
   CABINEO_EDGE_OFFSET_A,
   CABINEO_EDGE_OFFSET_B,
+  CABINEO_POCKET_CORNER_RADIUS,
   CABINEO_POCKET_DEPTH,
   CABINEO_POCKET_HEIGHT,
   CABINEO_POCKET_WIDTH,
@@ -52,7 +53,7 @@ export type Layer =
   | "DADO_7MM"
   | "BOOR_8MM"
   | "BOOR_5MM"
-  | "CABINEO_12MM"
+  | "CABINEO_11MM"
   | "RUG_SPONNING"
   | "GRAVURE";
 
@@ -67,6 +68,8 @@ export interface RectOp {
   w: number;
   h: number;
   depth: number;
+  /** Hoekradius van de pocketcontour (0 = scherpe hoeken in de tekening). */
+  radius?: number;
 }
 
 export interface CircleOp {
@@ -483,13 +486,14 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
               const x0 = end === 0 ? 0 : shelfLen - CABINEO_POCKET_HEIGHT;
               ops.push({
                 kind: "rect",
-                layer: "CABINEO_12MM",
+                layer: "CABINEO_11MM",
                 side: "B",
                 x: x0,
                 y: cy - CABINEO_POCKET_WIDTH / 2,
                 w: CABINEO_POCKET_HEIGHT,
                 h: CABINEO_POCKET_WIDTH,
                 depth: CABINEO_POCKET_DEPTH,
+                radius: CABINEO_POCKET_CORNER_RADIUS,
               });
             }
           }

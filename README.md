@@ -52,8 +52,10 @@ nesten apart op een eigen 4mm-plaat.
   blinde Ø8-boring in het plankvlak (onderzijde) als montageborging met
   deuvel 8 × 35 en lijm.
 - **Cabineo** (demontabel): 2 pockets per naad in het plankvlak
-  (onderzijde, laag `CABINEO_12MM`) + doorlopende Ø5-boutgaten in de
-  staander (laag `BOOR_5MM`).
+  (onderzijde, laag `CABINEO_11MM`, officiële Lamello Cabineo 8-maten:
+  33,8 × 16,5 × 11 mm) + Ø5-boutgaten in de staander (binnenstaanders
+  doorlopend, buitenstaanders blind). Voor productie kan in CAM ook de
+  officiële Lamello-macro/template op het pocket-hart worden toegepast.
 - Kasten hoger dan 2400 mm worden automatisch opgedeeld in gestapelde
   modules met elk hun eigen staanders.
 
@@ -69,7 +71,8 @@ nesten apart op een eigen 4mm-plaat.
 
 ### DXF-output
 
-Eén DXF (AC1015, mm) per plaat, lagen gescheiden per bewerking:
+Eén DXF (R12 / AC1009, mm) per plaat — het meest universeel leesbare
+DXF-formaat (VCarve, Fusion, Illustrator) — lagen gescheiden per bewerking:
 
 | Laag | Bewerking |
 | ---- | --------- |
@@ -78,7 +81,7 @@ Eén DXF (AC1015, mm) per plaat, lagen gescheiden per bewerking:
 | `BOOR_8MM_D15` | deuvelboring Ø8, 15 mm diep (dadobodem staander) |
 | `BOOR_8MM_D10` | deuvelboring Ø8, 10 mm diep (plankvlak, blind) |
 | `BOOR_5MM_DOOR` | Cabineo-boutgaten Ø5, doorlopend |
-| `CABINEO_12MM` | Cabineo-pockets 12,5 mm diep |
+| `CABINEO_11MM` | Cabineo-pockets 11 mm diep (Cabineo 8: 33,8 × 16,5 mm) |
 | `RUG_SPONNING` | groef 4 mm breed, 10 mm diep |
 | `GRAVURE` | onderdeel-ID's, 0,5 mm diep |
 | `PLAATRAND` | referentie, niet frezen |

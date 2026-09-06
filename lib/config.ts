@@ -29,9 +29,20 @@ export const DADO_DEPTH = 7; // blinde dado diepte in staander
 export const DADO_FRONT_STOP = 30; // dado stopt zoveel mm vóór de voorzijde
 export const DOWEL_DIAMETER = 8;
 export const DOWEL_LENGTH = 35;
-export const CABINEO_POCKET_WIDTH = 30.5; // Cabineo 8 pocketmaat
-export const CABINEO_POCKET_HEIGHT = 15;
-export const CABINEO_POCKET_DEPTH = 12.5;
+// Officiële Lamello Cabineo 8-maten: behuizing 33,8 × 16,5 × 10,8 mm,
+// pocket 11 mm diep, boutgat Ø5 (min. 8 mm diep), frees Ø12 of kleiner.
+// Voor productie kan ook de officiële Lamello CAM-macro/template op het
+// pocket-hart worden toegepast.
+export const CABINEO_POCKET_WIDTH = 33.8; // langs de naad
+export const CABINEO_POCKET_HEIGHT = 16.5; // haaks op de naad (vanaf plankeinde)
+export const CABINEO_POCKET_DEPTH = 11;
+/**
+ * Hoekradius van de pocketcontour. Lamello schrijft een frees van Ø12 of
+ * kleiner voor, dus de radius moet ≥ 6 zijn; 6 mm past gegarandeerd binnen
+ * elke behuizingshoek. Wie de officiële Lamello-template gebruikt kan de
+ * radius hier op de templatewaarde zetten.
+ */
+export const CABINEO_POCKET_CORNER_RADIUS = 6;
 export const CABINEO_BOLT_DIAMETER = 5;
 export const CABINEOS_PER_JOINT = 2;
 /**

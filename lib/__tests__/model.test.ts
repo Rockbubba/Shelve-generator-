@@ -11,7 +11,7 @@ import {
 } from "../config";
 import { buildCabinetModel, CircleOp, RectOp } from "../model";
 import { nestPanels } from "../nesting";
-import { panelContour, sheetToDxf } from "../dxf";
+import { panelContour, panelOpsInBedFrame, roundedRectContour, sheetToDxf } from "../dxf";
 
 /** Acceptatiekast: 1800 × 2000 × ~398, 4 kolommen × 5 rijen. */
 const ACCEPT: CabinetConfig = {
@@ -104,7 +104,7 @@ describe("wissel dado ↔ cabineo (acceptatiecriterium 5)", () => {
       cab.panels.some((p) => p.ops.some((o) => o.layer === "DADO_7MM")),
     ).toBe(false);
     expect(
-      cab.panels.some((p) => p.ops.some((o) => o.layer === "CABINEO_12MM")),
+      cab.panels.some((p) => p.ops.some((o) => o.layer === "CABINEO_11MM")),
     ).toBe(true);
 
     expect(dado.hardware.some((h) => h.name.startsWith("Deuvel"))).toBe(true);
@@ -169,14 +169,15 @@ describe("dxf-output (acceptatiecriterium 3)", () => {
   const nesting = nestPanels(model.panels, ACCEPT.depth);
   const dxf = sheetToDxf(nesting.sheets[0]);
 
-  it("bevat header, lagen en gesloten polylines in mm", () => {
+  it("bevat header, lagen en gesloten polylines in mm (R12)", () => {
     expect(dxf).toContain("$ACADVER");
-    expect(dxf).toContain("AC1015");
+    expect(dxf).toContain("AC1009"); // R12: maximaal compatibel (ook Illustrator)
     expect(dxf).toContain("$INSUNITS");
     expect(dxf).toContain("CONTOUR");
     expect(dxf).toContain("DADO_7MM");
     expect(dxf).toContain("GRAVURE");
-    expect(dxf).toContain("LWPOLYLINE");
+    expect(dxf).toContain("POLYLINE");
+    expect(dxf).toContain("SEQEND");
     expect(dxf.trim().endsWith("EOF")).toBe(true);
   });
 
@@ -189,8 +190,8 @@ describe("dxf-output (acceptatiecriterium 3)", () => {
     expect(all).toContain("BOOR_8MM_D10");
     expect(all).not.toContain("BOOR_8MM_D10_B");
     // Geen ongesuffixte boorlaag meer: dieptes mogen niet mengen.
-    expect(all).not.toMatch(/^BOOR_8MM$/m);
-    expect(all).not.toMatch(/^BOOR_8MM_B$/m);
+    expect(all).not.toMatch(/^BOOR_8MM\r?$/m);
+    expect(all).not.toMatch(/^BOOR_8MM_B\r?$/m);
   });
 
   it("cabineo-boutgaten: binnenstaanders doorlopend, buitenstaanders blind", () => {
@@ -199,7 +200,7 @@ describe("dxf-output (acceptatiecriterium 3)", () => {
     const all = cabNesting.sheets.map((s) => sheetToDxf(s)).join("\n");
     expect(all).toContain("BOOR_5MM_DOOR");
     expect(all).toContain("BOOR_5MM_D15");
-    expect(all).toContain("CABINEO_12MM");
+    expect(all).toContain("CABINEO_11MM");
 
     // Geen doorlopend gat in een buitenwang (zichtbaar van buiten).
     const outerIds = ["S1", `S${ACCEPT.columns + 1}`];
@@ -233,6 +234,24 @@ describe("dxf-output (acceptatiecriterium 3)", () => {
     }
   });
 
+  it("cabineo-pocket is een exacte afgeronde contour (33,8 × 16,5, R6)", () => {
+    const cab = buildCabinetModel({ ...ACCEPT, joinery: "cabineo" });
+    const plank = cab.panels.find((p) => p.type === "plank")!;
+    const pockets = panelOpsInBedFrame(plank).filter(
+      (op) => op.kind === "rect" && op.layer.startsWith("CABINEO"),
+    );
+    expect(pockets.length).toBe(4); // 2 per naad, 2 naden
+    for (const p of pockets) {
+      if (p.kind !== "rect") continue;
+      expect(p.h).toBeCloseTo(33.8, 5); // langs de naad
+      expect(p.w).toBeCloseTo(16.5, 5); // vanaf het plankeinde
+      expect(p.radius).toBeCloseTo(6, 5);
+    }
+    // De contour zelf heeft gepolygoniseerde hoekbogen, geen scherpe hoeken.
+    const contour = roundedRectContour(0, 0, 16.5, 33.8, 6);
+    expect(contour.length).toBeGreaterThan(16);
+  });
+
   it("staandercontour is een rechthoek", () => {
     const staander = model.panels.find((p) => p.type === "staander")!;
     expect(panelContour(staander)).toHaveLength(4);
@@ -252,7 +271,7 @@ describe("éénzijdig frezen", () => {
     const cab = buildCabinetModel({ ...ACCEPT, joinery: "cabineo" });
     const cabNesting = nestPanels(cab.panels, ACCEPT.depth);
     const all = cabNesting.sheets.map((s) => sheetToDxf(s)).join("\n");
-    expect(all).not.toMatch(/_B$/m);
+    expect(all).not.toMatch(/_B\r?$/m);
     // Boutgaten van linker- en rechtervak raken elkaar niet: verschillende
     // randafstanden per staanderzijde.
     const inner = cab.panels.find((p) => p.id === "S2")!;

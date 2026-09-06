@@ -1,10 +1,13 @@
 /**
- * Minimale DXF-writer (AC1015 / DXF 2000) voor CNC-output.
- * - Gesloten LWPOLYLINEs voor contouren en pockets
+ * Minimale DXF-writer (AC1009 / R12) voor CNC-output.
+ * R12 is het meest universeel leesbare DXF-formaat: VCarve, Fusion,
+ * Illustrator en vrijwel elke CAM-/tekenapplicatie openen het.
+ * - Gesloten POLYLINEs voor contouren en pockets
  * - CIRCLE voor boringen, TEXT voor gravures
- * - Lagen per bewerking; side-B-bewerkingen (paneel omklappen over de lange
- *   zijde) komen gespiegeld op een laag met suffix `_B`.
- * - Eenheden: millimeters ($INSUNITS = 4)
+ * - Lagen per bewerking; tweede-zijde-bewerkingen komen gespiegeld op een
+ *   laag met suffix `_B`.
+ * - Eenheden: millimeters ($INSUNITS = 4; R12-lezers zonder deze header
+ *   vragen zelf om de eenheid — kies mm)
  */
 
 import { NestedSheet, Placement } from "./nesting";
@@ -16,7 +19,7 @@ const BASE_LAYER_COLORS: Record<string, number> = {
   DADO_7MM: 1,
   BOOR_8MM: 5,
   BOOR_5MM: 4,
-  CABINEO_12MM: 6,
+  CABINEO_11MM: 6,
   RUG_SPONNING: 3,
   GRAVURE: 8,
 };
@@ -38,10 +41,10 @@ function layerColor(name: string): number {
  * Freesdiepte reist in DXF alleen via de laagconventie mee, dus boringen
  * krijgen een diepte-suffix: `_D15` = 15 mm diep vanaf het vlak,
  * `_DOOR` = doorlopend. Pockets dragen de diepte al in hun naam
- * (DADO_7MM, CABINEO_12MM, RUG_SPONNING = 10 mm).
+ * (DADO_7MM, CABINEO_11MM, RUG_SPONNING = 10 mm).
  */
 export type BedOp =
-  | { kind: "rect"; layer: string; secondary: boolean; x: number; y: number; w: number; h: number }
+  | { kind: "rect"; layer: string; secondary: boolean; x: number; y: number; w: number; h: number; radius: number }
   | { kind: "circle"; layer: string; secondary: boolean; cx: number; cy: number; r: number }
   | { kind: "text"; layer: string; secondary: boolean; x: number; y: number; height: number; text: string };
 
@@ -74,7 +77,16 @@ export function panelOpsInBedFrame(panel: Panel): BedOp[] {
         if (short) x = L - x - op.w;
         else y = W - y - op.h;
       }
-      return { kind: "rect", layer, secondary, x, y, w: op.w, h: op.h };
+      return {
+        kind: "rect",
+        layer,
+        secondary,
+        x,
+        y,
+        w: op.w,
+        h: op.h,
+        radius: op.radius ?? 0,
+      };
     }
     if (op.kind === "circle") {
       let { cx, cy } = op;
@@ -95,12 +107,7 @@ export function panelOpsInBedFrame(panel: Panel): BedOp[] {
 
 class DxfBuilder {
   private lines: string[] = [];
-  private handle = 0x100;
   private usedLayers = new Set<string>();
-
-  private nextHandle(): string {
-    return (this.handle++).toString(16).toUpperCase();
-  }
 
   private push(...pairs: (string | number)[]) {
     for (const p of pairs) this.lines.push(String(p));
@@ -108,31 +115,30 @@ class DxfBuilder {
 
   polyline(layer: string, points: [number, number][], closed = true) {
     this.usedLayers.add(layer);
-    this.push(0, "LWPOLYLINE", 5, this.nextHandle(), 100, "AcDbEntity", 8, layer);
-    this.push(100, "AcDbPolyline", 90, points.length, 70, closed ? 1 : 0);
+    this.push(0, "POLYLINE", 8, layer, 66, 1, 70, closed ? 1 : 0);
+    this.push(10, 0, 20, 0, 30, 0);
     for (const [x, y] of points) {
-      this.push(10, fmt(x), 20, fmt(y));
+      this.push(0, "VERTEX", 8, layer, 10, fmt(x), 20, fmt(y), 30, 0);
     }
+    this.push(0, "SEQEND", 8, layer);
   }
 
   circle(layer: string, cx: number, cy: number, radius: number) {
     this.usedLayers.add(layer);
-    this.push(0, "CIRCLE", 5, this.nextHandle(), 100, "AcDbEntity", 8, layer);
-    this.push(100, "AcDbCircle", 10, fmt(cx), 20, fmt(cy), 30, 0, 40, fmt(radius));
+    this.push(0, "CIRCLE", 8, layer, 10, fmt(cx), 20, fmt(cy), 30, 0, 40, fmt(radius));
   }
 
   text(layer: string, x: number, y: number, height: number, value: string) {
     this.usedLayers.add(layer);
-    this.push(0, "TEXT", 5, this.nextHandle(), 100, "AcDbEntity", 8, layer);
     this.push(
-      100, "AcDbText",
+      0, "TEXT", 8, layer,
       10, fmt(x), 20, fmt(y), 30, 0,
       40, fmt(height),
       1, value,
       72, 1, // horizontaal gecentreerd
       11, fmt(x), 21, fmt(y), 31, 0,
+      73, 2, // verticaal gecentreerd
     );
-    this.push(100, "AcDbText", 73, 2); // verticaal gecentreerd
   }
 
   build(): string {
@@ -143,39 +149,29 @@ class DxfBuilder {
 
     // HEADER
     push(0, "SECTION", 2, "HEADER");
-    push(9, "$ACADVER", 1, "AC1015");
+    push(9, "$ACADVER", 1, "AC1009");
     push(9, "$INSUNITS", 70, 4); // millimeters
-    push(9, "$HANDSEED", 5, "FFFF");
     push(0, "ENDSEC");
 
     // TABLES: LTYPE (CONTINUOUS) + LAYER
     push(0, "SECTION", 2, "TABLES");
-    push(0, "TABLE", 2, "LTYPE", 5, "8", 100, "AcDbSymbolTable", 70, 1);
-    push(
-      0, "LTYPE", 5, "9", 100, "AcDbSymbolTableRecord", 100, "AcDbLinetypeTableRecord",
-      2, "CONTINUOUS", 70, 0, 3, "Solid line", 72, 65, 73, 0, 40, 0,
-    );
+    push(0, "TABLE", 2, "LTYPE", 70, 1);
+    push(0, "LTYPE", 2, "CONTINUOUS", 70, 0, 3, "Solid line", 72, 65, 73, 0, 40, 0);
     push(0, "ENDTAB");
     const layers = Array.from(this.usedLayers).sort();
-    push(0, "TABLE", 2, "LAYER", 5, "A", 100, "AcDbSymbolTable", 70, layers.length);
-    let layerHandle = 0x10;
+    push(0, "TABLE", 2, "LAYER", 70, layers.length);
     for (const name of layers) {
-      push(
-        0, "LAYER", 5, (layerHandle++).toString(16).toUpperCase(),
-        100, "AcDbSymbolTableRecord", 100, "AcDbLayerTableRecord",
-        2, name, 70, 0, 62, layerColor(name), 6, "CONTINUOUS",
-      );
+      push(0, "LAYER", 2, name, 70, 0, 62, layerColor(name), 6, "CONTINUOUS");
     }
     push(0, "ENDTAB");
     push(0, "ENDSEC");
 
-    // BLOCKS (leeg) + ENTITIES
-    push(0, "SECTION", 2, "BLOCKS", 0, "ENDSEC");
+    // ENTITIES
     push(0, "SECTION", 2, "ENTITIES");
     out.push(...this.lines);
     push(0, "ENDSEC");
     push(0, "EOF");
-    return out.join("\n");
+    return out.join("\r\n");
   }
 }
 
@@ -223,16 +219,55 @@ export function panelContour(panel: Panel): [number, number][] {
   return pts;
 }
 
+/**
+ * Gesloten contour van een (afgeronde) rechthoek, linksom. Hoekbogen worden
+ * gepolygoniseerd zodat elke DXF-lezer (ook Illustrator) ze exact overneemt.
+ */
+export function roundedRectContour(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  radius: number,
+  segmentsPerCorner = 8,
+): [number, number][] {
+  const r = Math.min(radius, w / 2, h / 2);
+  if (r <= 0.01) {
+    return [
+      [x, y],
+      [x + w, y],
+      [x + w, y + h],
+      [x, y + h],
+    ];
+  }
+  const corners: [number, number, number][] = [
+    [x + w - r, y + r, -90], // rechtsonder
+    [x + w - r, y + h - r, 0], // rechtsboven
+    [x + r, y + h - r, 90], // linksboven
+    [x + r, y + r, 180], // linksonder
+  ];
+  const pts: [number, number][] = [];
+  for (const [cx, cy, startDeg] of corners) {
+    for (let i = 0; i <= segmentsPerCorner; i++) {
+      const a = ((startDeg + (90 * i) / segmentsPerCorner) * Math.PI) / 180;
+      pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+    }
+  }
+  return pts;
+}
+
 function emitBedOp(dxf: DxfBuilder, placement: Placement, op: BedOp) {
   if (op.kind === "rect") {
-    const x0 = placement.x + op.x;
-    const y0 = placement.y + op.y;
-    dxf.polyline(op.layer, [
-      [x0, y0],
-      [x0 + op.w, y0],
-      [x0 + op.w, y0 + op.h],
-      [x0, y0 + op.h],
-    ]);
+    dxf.polyline(
+      op.layer,
+      roundedRectContour(
+        placement.x + op.x,
+        placement.y + op.y,
+        op.w,
+        op.h,
+        op.radius,
+      ),
+    );
   } else if (op.kind === "circle") {
     dxf.circle(op.layer, placement.x + op.cx, placement.y + op.cy, op.r);
   } else {
