@@ -16,7 +16,7 @@ import {
   RectOp,
 } from "../model";
 import { nestPanels } from "../nesting";
-import { panelContour, sheetToDxf } from "../dxf";
+import { panelContour, panelContourInBedFrame, sheetToDxf } from "../dxf";
 import { estimateMachining, MACHINE } from "../costing";
 
 /** Acceptatiekast: 1800 × 2000 × ~398, 4 kolommen × 5 rijen. */
@@ -439,6 +439,90 @@ describe("materiaal, cabineo-maat en kosten", () => {
     const zonder = estimateMachining(model, nesting);
     expect(zonder.materialCost).toBeUndefined();
     expect(zonder.totalCost).toBeUndefined();
+  });
+});
+
+describe("speelse indeling: planken weglaten", () => {
+  it("weggelaten plank verdwijnt incl. dado's en de vakken versmelten", () => {
+    const model = buildCabinetModel({ ...ACCEPT, omittedShelves: { "0:1:2": true } });
+    const planken = model.panels.filter((p) => p.type === "plank");
+    expect(planken).toHaveLength(4 * 6 - 1);
+
+    const dadosOf = (id: string, side: "A" | "B") =>
+      model.panels
+        .find((p) => p.id === id)!
+        .ops.filter(
+          (o): o is RectOp => o.kind === "rect" && o.layer === "DADO_7MM" && o.side === side,
+        );
+    // S2 (i = 1): zijde A grenst aan kolom 1 (plank weg), zijde B aan kolom 0.
+    expect(dadosOf("S2", "A")).toHaveLength(5);
+    expect(dadosOf("S2", "B")).toHaveLength(6);
+    // S3 (i = 2): zijde B grenst aan kolom 1.
+    expect(dadosOf("S3", "B")).toHaveLength(5);
+    expect(dadosOf("S3", "A")).toHaveLength(6);
+
+    const col1 = model.cells.filter((c) => c.col === 1);
+    expect(col1).toHaveLength(4);
+    const merged = col1.find((c) => c.rowSpan === 2)!;
+    expect(merged.row).toBe(1);
+    const single = col1.find((c) => c.row === 0)!;
+    expect(merged.h).toBeCloseTo(single.h * 2 + ACCEPT.thickness, 0);
+
+    expect(model.ghostShelves).toHaveLength(1);
+    expect(model.ghostShelves[0].key).toBe("0:1:2");
+    // Tussenplanken zijn aantikbaar, boven-/onderplank niet.
+    expect(planken.filter((p) => p.shelfKey).length).toBe(4 * 4 - 1);
+  });
+});
+
+describe("voorkantprofiel", () => {
+  it("golf: staanders krijgen eigen diepte, planken een gebogen contour binnen de strook", () => {
+    const model = buildCabinetModel({
+      ...ACCEPT,
+      frontProfile: { type: "golf", amplitude: 80, periodes: 2 },
+    });
+    const staanders = model.panels.filter((p) => p.type === "staander");
+    expect(new Set(staanders.map((s) => s.width)).size).toBeGreaterThan(1);
+    for (const s of staanders) {
+      expect(s.width).toBeLessThanOrEqual(ACCEPT.depth + 0.01);
+      expect(s.width).toBeGreaterThanOrEqual(ACCEPT.depth - 80 - 0.1);
+    }
+
+    const plank = model.panels.find((p) => p.type === "plank")!;
+    expect(plank.contour).toBeDefined();
+    expect(plank.width).toBeLessThanOrEqual(ACCEPT.depth + 0.01);
+    // Uiteinden sluiten aan op de staanderdiepte (inkeping = diepte − 34).
+    const s1 = model.panels.find((p) => p.id === "S1")!;
+    const s2 = model.panels.find((p) => p.id === "S2")!;
+    const c = plank.contour!;
+    const leftTop = Math.max(...c.filter(([x]) => Math.abs(x) < 0.01).map(([, y]) => y));
+    const rightTop = Math.max(
+      ...c.filter(([x]) => Math.abs(x - plank.length) < 0.01).map(([, y]) => y),
+    );
+    expect(Math.abs(leftTop - (s1.width - 34))).toBeLessThan(5);
+    expect(Math.abs(rightTop - (s2.width - 34))).toBeLessThan(5);
+
+    // Nesting blijft foutloos; DXF-contour van de ondersteboven liggende
+    // plank is over de korte zijde gespiegeld.
+    const nesting = nestPanels(model.panels, ACCEPT.depth);
+    expect(nesting.errors).toHaveLength(0);
+    const bed = panelContourInBedFrame(plank);
+    expect(
+      bed.some(
+        ([x, y]) => Math.abs(x - plank.length) < 0.01 && Math.abs(y - leftTop) < 0.01,
+      ),
+    ).toBe(true);
+  });
+
+  it("amplitude wordt begrensd zodat de kast minimaal 120 mm diep blijft", () => {
+    const model = buildCabinetModel({
+      ...ACCEPT,
+      frontProfile: { type: "schuin", amplitude: 500, periodes: 1 },
+    });
+    expect(model.warnings.some((w) => w.includes("Profielamplitude"))).toBe(true);
+    for (const s of model.panels.filter((p) => p.type === "staander")) {
+      expect(s.width).toBeGreaterThanOrEqual(120 - 0.1);
+    }
   });
 });
 

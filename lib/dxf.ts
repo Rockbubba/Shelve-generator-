@@ -56,6 +56,21 @@ export function flipAxis(panel: Panel): "kort" | "lang" {
   return panel.type === "plank" || panel.type === "plint" ? "kort" : "lang";
 }
 
+/**
+ * Buitencontour in het bed-frame: gespiegeld over de flip-as wanneer het
+ * onderdeel met zijde B boven ligt (planken ondersteboven). Voor symmetrische
+ * rechthoeken verandert er niets; voor geprofileerde voorranden wél.
+ */
+export function panelContourInBedFrame(panel: Panel): [number, number][] {
+  const pts = panelContour(panel);
+  if (panel.machineSide !== "B") return pts;
+  const L = panel.length;
+  const W = panel.width;
+  return flipAxis(panel) === "kort"
+    ? pts.map(([x, y]) => [L - x, y] as [number, number])
+    : pts.map(([x, y]) => [x, W - y] as [number, number]);
+}
+
 export function panelOpsInBedFrame(panel: Panel): BedOp[] {
   const L = panel.length;
   const W = panel.width;
@@ -200,6 +215,7 @@ function fmt(v: number): string {
  * gevolgd, en sluiten via de linkerrand. Gesloten polyline.
  */
 export function panelContour(panel: Panel): [number, number][] {
+  if (panel.contour) return panel.contour;
   const L = panel.length;
   const W = panel.width;
   const eps = 0.001;
@@ -309,7 +325,7 @@ export function sheetToDxf(sheet: NestedSheet): string {
   ]);
 
   for (const placement of sheet.placements) {
-    const contour = panelContour(placement.panel).map(
+    const contour = panelContourInBedFrame(placement.panel).map(
       ([x, y]) => [placement.x + x, placement.y + y] as [number, number],
     );
     dxf.polyline("CONTOUR", contour);

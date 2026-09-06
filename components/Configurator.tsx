@@ -5,6 +5,8 @@ import {
   CabinetConfig,
   DEFAULT_CONFIG,
   DEPTH_OPTIONS,
+  FrontProfile,
+  MIN_PROFILE_DEPTH,
   MAX_DEPTH,
   MAX_HEIGHT,
   MAX_WIDTH,
@@ -81,6 +83,15 @@ export default function Configurator() {
       const current = cellFillFor(c, m, col, row);
       const next = current === "rug" ? "open" : "rug";
       return { ...c, cellFills: { ...c.cellFills, [cellKey]: next } };
+    });
+  }, []);
+
+  const onShelfTap = useCallback((key: string) => {
+    setConfig((c) => {
+      const omitted = { ...c.omittedShelves };
+      if (omitted[key]) delete omitted[key];
+      else omitted[key] = true;
+      return { ...c, omittedShelves: omitted };
     });
   }, []);
 
@@ -176,6 +187,48 @@ export default function Configurator() {
                 : undefined
             }
           />
+          <Segmented
+            label="Voorkant"
+            options={[
+              { value: "recht", label: "Recht" },
+              { value: "golf", label: "Golf" },
+              { value: "bol", label: "Bol" },
+              { value: "hol", label: "Hol" },
+              { value: "schuin", label: "Schuin" },
+            ]}
+            value={config.frontProfile.type}
+            onChange={(type) =>
+              update({
+                frontProfile: { ...config.frontProfile, type: type as FrontProfile["type"] },
+              })
+            }
+          />
+          {config.frontProfile.type !== "recht" && (
+            <Stepper
+              label="Glooiing (terugwijking voorkant)"
+              value={config.frontProfile.amplitude}
+              min={10}
+              max={Math.max(10, config.depth - MIN_PROFILE_DEPTH)}
+              step={10}
+              onChange={(amplitude) =>
+                update({ frontProfile: { ...config.frontProfile, amplitude } })
+              }
+              hint="staanders krijgen elk hun eigen diepte, planken een gebogen voorrand"
+            />
+          )}
+          {config.frontProfile.type === "golf" && (
+            <Stepper
+              label="Aantal golven"
+              value={config.frontProfile.periodes}
+              min={1}
+              max={6}
+              step={1}
+              unit=""
+              onChange={(periodes) =>
+                update({ frontProfile: { ...config.frontProfile, periodes } })
+              }
+            />
+          )}
         </div>
       )}
       {step === 1 && (
@@ -199,9 +252,25 @@ export default function Configurator() {
             onChange={(rows) => update({ rows })}
           />
           <p className="mt-1 text-xs text-neutral-500">
-            Vakbreedte: {formatMm(model.cellWidth)} mm. Afwijkende rijhoogtes per
-            kolom volgen in v2.
+            Vakbreedte: {formatMm(model.cellWidth)} mm.
           </p>
+          <div className="mt-2 rounded-xl bg-neutral-50 p-3 text-xs text-neutral-600">
+            <p className="font-medium text-neutral-800">Speelse indeling</p>
+            <p className="mt-1">
+              Tik in de 3D-weergave op een tussenplank om hem weg te laten: de
+              vakken erboven en eronder worden één hoog vak. Tik op de
+              doorzichtige plank om hem terug te zetten.
+            </p>
+            {Object.keys(config.omittedShelves).length > 0 && (
+              <button
+                type="button"
+                className="btn-touch mt-2 rounded-lg border border-neutral-300 px-3 py-1.5 font-medium text-neutral-700 active:bg-neutral-100"
+                onClick={() => update({ omittedShelves: {} })}
+              >
+                Alle planken terug ({Object.keys(config.omittedShelves).length} weggelaten)
+              </button>
+            )}
+          </div>
         </div>
       )}
       {step === 2 && (
@@ -428,7 +497,7 @@ export default function Configurator() {
       {/* Mobiel: 3D bovenin (sticky), bottom sheet eronder. */}
       <div className="lg:hidden">
         <div className="fixed inset-x-0 top-0 h-[55dvh]">
-          <Viewer3D model={model} onCellTap={onCellTap} />
+          <Viewer3D model={model} onCellTap={onCellTap} onShelfTap={onShelfTap} />
         </div>
         <BottomSheet snap={snap} onSnapChange={setSnap} peek={peek} footer={navButtons}>
           {settings}
@@ -443,7 +512,7 @@ export default function Configurator() {
           <div className="mt-4">{navButtons}</div>
         </aside>
         <main className="relative">
-          <Viewer3D model={model} onCellTap={onCellTap} />
+          <Viewer3D model={model} onCellTap={onCellTap} onShelfTap={onShelfTap} />
         </main>
         <aside className="overflow-y-auto border-l border-neutral-200 p-4">
           <div className="mb-3 rounded-2xl bg-neutral-900 p-4 text-white">

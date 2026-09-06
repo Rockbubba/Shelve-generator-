@@ -15,6 +15,8 @@ export class CabinetScene {
   private controls: OrbitControls;
   private cabinetGroup: THREE.Group | null = null;
   private cellProxies: THREE.Mesh[] = [];
+  private shelfTargets: THREE.Mesh[] = [];
+  private ghostMat: THREE.MeshBasicMaterial;
   private toonMat: THREE.MeshToonMaterial;
   private toonMatHdf: THREE.MeshToonMaterial;
   private edgeMat: THREE.LineBasicMaterial;
@@ -32,6 +34,7 @@ export class CabinetScene {
   constructor(
     private container: HTMLElement,
     private onCellTap: (cellKey: string) => void,
+    private onShelfTap: (shelfKey: string) => void = () => {},
   ) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -65,6 +68,13 @@ export class CabinetScene {
     });
     this.edgeMat = new THREE.LineBasicMaterial({
       color: 0x555555,
+      depthWrite: false,
+    });
+    // Weggelaten planken: doorzichtig, aantikken zet ze terug.
+    this.ghostMat = new THREE.MeshBasicMaterial({
+      color: 0x2563eb,
+      transparent: true,
+      opacity: 0.18,
       depthWrite: false,
     });
 
@@ -123,11 +133,41 @@ export class CabinetScene {
       -((e.clientY - rect.top) / rect.height) * 2 + 1,
     );
     this.raycaster.setFromCamera(ndc, this.camera);
-    const hits = this.raycaster.intersectObjects(this.cellProxies, false);
-    if (hits.length > 0) {
-      const key = hits[0].object.userData.cellKey as string;
-      this.onCellTap(key);
+    // Planken (echte en ghost) en vak-volumes samen; het dichtstbijzijnde wint.
+    const hits = this.raycaster.intersectObjects(
+      [...this.shelfTargets, ...this.cellProxies],
+      false,
+    );
+    if (hits.length === 0) return;
+    const data = hits[0].object.userData;
+    if (data.shelfKey) this.onShelfTap(data.shelfKey as string);
+    else if (data.cellKey) this.onCellTap(data.cellKey as string);
+  }
+
+  /** Geometrie voor een paneel: doos, of extrusie van de vrije contour. */
+  private panelGeometry(p: CabinetModel["panels"][number]): {
+    geo: THREE.BufferGeometry;
+    centered: boolean;
+  } {
+    if (!p.contour) {
+      return {
+        geo: new THREE.BoxGeometry(p.place.w, p.place.h, p.place.d),
+        centered: true,
+      };
     }
+    // Contour ligt in het (x, diepte)-vlak; extruderen over de dikte (y).
+    const shape = new THREE.Shape();
+    p.contour.forEach(([x, y], i) =>
+      i === 0 ? shape.moveTo(x, -y) : shape.lineTo(x, -y),
+    );
+    shape.closePath();
+    const geo = new THREE.ExtrudeGeometry(shape, {
+      depth: p.place.h,
+      bevelEnabled: false,
+    });
+    // (x, y, z) → (x, z, -y): extrusie langs +y, shape-y (= -diepte) → +z.
+    geo.rotateX(-Math.PI / 2);
+    return { geo, centered: false };
   }
 
   updateModel(model: CabinetModel) {
@@ -140,6 +180,7 @@ export class CabinetScene {
       });
     }
     this.cellProxies = [];
+    this.shelfTargets = [];
 
     const W = model.snappedWidth;
     const H = model.config.height;
@@ -153,16 +194,24 @@ export class CabinetScene {
     const off = new THREE.Vector3(-W / 2, 0, -D / 2);
 
     for (const p of model.panels) {
-      const geo = new THREE.BoxGeometry(p.place.w, p.place.h, p.place.d);
+      const { geo, centered } = this.panelGeometry(p);
       const mat = p.material === "hdf4" ? this.toonMatHdf : this.toonMat;
       const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(
-        off.x + p.place.x + p.place.w / 2,
-        off.y + p.place.y + p.place.h / 2,
-        off.z + p.place.z + p.place.d / 2,
-      );
+      if (centered) {
+        mesh.position.set(
+          off.x + p.place.x + p.place.w / 2,
+          off.y + p.place.y + p.place.h / 2,
+          off.z + p.place.z + p.place.d / 2,
+        );
+      } else {
+        mesh.position.set(off.x + p.place.x, off.y + p.place.y, off.z + p.place.z);
+      }
       mesh.castShadow = true;
       mesh.receiveShadow = true;
+      if (p.shelfKey) {
+        mesh.userData.shelfKey = p.shelfKey;
+        this.shelfTargets.push(mesh);
+      }
       group.add(mesh);
 
       const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), this.edgeMat);
@@ -170,9 +219,28 @@ export class CabinetScene {
       group.add(edges);
     }
 
-    // Onzichtbare vak-volumes voor raycast-toggles.
+    // Weggelaten planken als doorzichtige ghost (tik = terugzetten).
+    for (const g of model.ghostShelves) {
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(g.place.w, g.place.h, g.place.d),
+        this.ghostMat,
+      );
+      mesh.position.set(
+        off.x + g.place.x + g.place.w / 2,
+        off.y + g.place.y + g.place.h / 2,
+        off.z + g.place.z + g.place.d / 2,
+      );
+      mesh.userData.shelfKey = g.key;
+      group.add(mesh);
+      this.shelfTargets.push(mesh);
+    }
+
+    // Onzichtbare vak-volumes voor rug-toggles: alleen de achterste helft
+    // van het vak, zodat planken (en ghost-planken) vóór het volume raakbaar
+    // blijven en een tik "op de rug" het rugpaneel schakelt.
     for (const cell of model.cells) {
-      const geo = new THREE.BoxGeometry(cell.w, cell.h, cell.d * 0.9);
+      const depth = cell.d * 0.55;
+      const geo = new THREE.BoxGeometry(cell.w, cell.h, depth);
       const proxy = new THREE.Mesh(
         geo,
         new THREE.MeshBasicMaterial({ visible: false }),
@@ -180,7 +248,7 @@ export class CabinetScene {
       proxy.position.set(
         off.x + cell.x + cell.w / 2,
         off.y + cell.y + cell.h / 2,
-        off.z + cell.z + cell.d / 2,
+        off.z + cell.z + depth / 2,
       );
       proxy.userData.cellKey = cell.key;
       group.add(proxy);

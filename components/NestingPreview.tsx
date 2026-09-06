@@ -2,7 +2,7 @@
 
 import { formatMm } from "@/lib/config";
 import { NestedSheet, NestingResult, Placement } from "@/lib/nesting";
-import { panelContour, panelOpsInBedFrame } from "@/lib/dxf";
+import { panelContourInBedFrame, panelOpsInBedFrame } from "@/lib/dxf";
 
 /** Kleur per bewerkingstype, gelijk aan de DXF-laagkleuren. */
 function opColor(layer: string): string {
@@ -85,7 +85,7 @@ function SheetSvg({ sheet }: { sheet: NestedSheet }) {
     >
       <rect x={0} y={0} width={L} height={W} fill="#fafafa" stroke="#999" strokeWidth={4} />
       {sheet.placements.map((pl) => {
-        const pts = panelContour(pl.panel)
+        const pts = panelContourInBedFrame(pl.panel)
           .map(([x, y]) => `${pl.x + x},${W - (pl.y + y)}`)
           .join(" ");
         return (

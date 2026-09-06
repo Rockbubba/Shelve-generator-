@@ -28,7 +28,11 @@ import {
   CABINEO_POCKET_DEPTH,
   CABINEOS_PER_JOINT,
   CabineoVariant,
+  FrontProfile,
+  frontOffset,
   materialById,
+  MIN_PROFILE_DEPTH,
+  shelfKey,
   HDF_THICKNESS,
   KERF,
   MAX_MODULE_HEIGHT,
@@ -142,13 +146,24 @@ export interface Panel {
   machineSide: Side;
   place: Placement3D;
   module: number;
+  /**
+   * Vrije buitencontour (lokaal, gesloten linksom) voor niet-rechthoekige
+   * onderdelen zoals planken met een geprofileerde voorrand. Vervangt dan
+   * de rechthoek + inkepingen.
+   */
+  contour?: [number, number][];
+  /** Alleen voor weglaatbare tussenplanken: sleutel voor de 3D-toggle. */
+  shelfKey?: string;
 }
 
 export interface CellInfo {
   key: string;
   module: number;
   col: number;
+  /** Onderste rij van het (eventueel samengevoegde) vak. */
   row: number;
+  /** Aantal rijen dat dit vak beslaat (>1 als er planken zijn weggelaten). */
+  rowSpan: number;
   fill: CellFill;
   /** Binnenmaat van het vak in kastcoördinaten. */
   x: number;
@@ -186,8 +201,19 @@ export interface CabinetModel {
   shelfPartLength: number;
   panels: Panel[];
   cells: CellInfo[];
+  /** Weggelaten tussenplanken, als doorzichtige "ghost" terug te zetten in 3D. */
+  ghostShelves: { key: string; place: Placement3D }[];
   hardware: HardwareItem[];
   warnings: string[];
+}
+
+interface ColumnCell {
+  row: number;
+  rowSpan: number;
+  /** Onderkant binnenmaat (module-lokaal) en hoogte. */
+  y: number;
+  h: number;
+  fill: CellFill;
 }
 
 // ---- Breedte-snapping -------------------------------------------------------
@@ -352,6 +378,24 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
   const cabOff = cabineoEdgeOffsets(D);
   const hplMaterial = materialById(config.materialId).hpl === true;
 
+  // Voorkantprofiel: amplitude begrensd zodat de kast nergens ondieper wordt
+  // dan MIN_PROFILE_DEPTH. Staanderdiepte = diepte op de eigen positie.
+  const maxAmplitude = Math.max(0, D - MIN_PROFILE_DEPTH);
+  const profile: FrontProfile = {
+    ...config.frontProfile,
+    amplitude: Math.min(config.frontProfile.amplitude, maxAmplitude),
+  };
+  if (config.frontProfile.type !== "recht" && config.frontProfile.amplitude > maxAmplitude) {
+    warnings.push(
+      `Profielamplitude begrensd op ${maxAmplitude} mm zodat de kast minimaal ${MIN_PROFILE_DEPTH} mm diep blijft.`,
+    );
+  }
+  const profiled = profile.type !== "recht" && profile.amplitude > 0;
+  const depthAt = (x: number) => D - frontOffset(profile, x, W);
+  const staanderX = (i: number) => i * (cellW + t);
+  const staanderDepth = (i: number) =>
+    profiled ? round1(depthAt(staanderX(i) + t / 2)) : D;
+
   // Modules: hoger dan MAX_MODULE_HEIGHT wordt gestapeld.
   const moduleCount = Math.max(1, Math.ceil(config.height / MAX_MODULE_HEIGHT));
   const moduleHeights: number[] = [];
@@ -361,6 +405,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
 
   const panels: Panel[] = [];
   const cells: CellInfo[] = [];
+  const ghostShelves: { key: string; place: Placement3D }[] = [];
   const notchLen = DADO_FRONT_STOP + TOOL_RADIUS; // hoekinkeping plank
 
   let staanderNo = 0;
@@ -369,6 +414,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
   let dowelJoints = 0;
   let cabineoJoints = 0;
   let rugCellCount = 0;
+  let tallCellWarned = false;
 
   let moduleBase = 0;
   for (let m = 0; m < moduleCount; m++) {
@@ -392,25 +438,57 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
       );
     }
 
-    // Vakken (voor raycast-toggles en rugpanelen).
+    // Aanwezige plankniveaus per kolom: onder- en bovenplank altijd,
+    // tussenplanken tenzij weggelaten. Waar een plank ontbreekt versmelten
+    // de vakken erboven en eronder tot één hoog vak.
+    const shelfPresent = (c: number, j: number) =>
+      j === 0 || j === rows || !config.omittedShelves[shelfKey(m, c, j)];
+    const presentLevels = (c: number): number[] => {
+      const levels: number[] = [];
+      for (let j = 0; j <= rows; j++) if (shelfPresent(c, j)) levels.push(j);
+      return levels;
+    };
+
+    // Vakken (voor raycast-toggles en rugpanelen), per kolom samengevoegd.
+    const colCells: ColumnCell[][] = [];
     for (let c = 0; c < columns; c++) {
-      for (let r = 0; r < rows; r++) {
-        const fill = cellFillFor(config, m, c, r);
+      const lv = presentLevels(c);
+      const list: ColumnCell[] = [];
+      for (let k = 0; k < lv.length - 1; k++) {
+        const j0 = lv[k];
+        const j1 = lv[k + 1];
+        const fill = cellFillFor(config, m, c, j0);
         if (fill === "rug") rugCellCount++;
+        const cell: ColumnCell = {
+          row: j0,
+          rowSpan: j1 - j0,
+          y: levelY[j0] + t,
+          h: round1(levelY[j1] - (levelY[j0] + t)),
+          fill,
+        };
+        list.push(cell);
         cells.push({
-          key: cellKey(m, c, r),
+          key: cellKey(m, c, j0),
           module: m,
           col: c,
-          row: r,
+          row: j0,
+          rowSpan: cell.rowSpan,
           fill,
           x: c * (cellW + t) + t,
-          y: moduleBase + levelY[r] + t,
+          y: moduleBase + cell.y,
           z: 0,
           w: cellW,
-          h: cellH,
+          h: cell.h,
           d: D,
         });
+        if (cell.h > 1000 && !tallCellWarned) {
+          tallCellWarned = true;
+          warnings.push(
+            "Een vak is hoger dan 1000 mm doordat er tussenplanken zijn weggelaten: de staanders missen daar dwarsverband — overweeg een rugpaneel in dat vak.",
+          );
+        }
       }
+      colCells.push(list);
     }
 
     // ---- Staanders ----------------------------------------------------------
@@ -418,13 +496,16 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
       staanderNo++;
       const id = `S${staanderNo}`;
       const ops: Operation[] = [];
+      const Di = staanderDepth(i); // eigen diepte volgens het voorkantprofiel
       // Side A = vlak richting +x (rechts), side B = richting -x (links).
       const sides: Side[] = [];
       if (i < columns) sides.push("A");
       if (i > 0) sides.push("B");
 
       for (const side of sides) {
+        const colOfSide = side === "A" ? i : i - 1;
         for (let j = 0; j <= rows; j++) {
+          if (!shelfPresent(colOfSide, j)) continue; // weggelaten plank: geen naad
           if (joinery === "dado") {
             // Blinde dado: 7 mm diep, breedte = plaatdikte, stopt 30 mm vóór voorzijde.
             ops.push({
@@ -434,7 +515,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
               x: levelY[j],
               y: 0,
               w: t,
-              h: D - DADO_FRONT_STOP,
+              h: Di - DADO_FRONT_STOP,
               depth: DADO_DEPTH,
             });
             // Deuvelgat Ø8 in de dadobodem (montageborging).
@@ -443,7 +524,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
               layer: "BOOR_8MM",
               side,
               cx: levelY[j] + t / 2,
-              cy: (D - DADO_FRONT_STOP) / 2,
+              cy: (Di - DADO_FRONT_STOP) / 2,
               diameter: DOWEL_DIAMETER,
               depth: DADO_DEPTH + 8,
               through: false,
@@ -459,7 +540,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
             const isOuter = i === 0 || i === columns;
             const edge = side === "A" ? cabOff.a : cabOff.b;
             for (let k = 0; k < CABINEOS_PER_JOINT; k++) {
-              const cy = k === 0 ? edge : D - edge;
+              const cy = k === 0 ? edge : Di - edge;
               ops.push({
                 kind: "circle",
                 layer: hplMaterial ? "BOOR_5_5MM" : "BOOR_5MM",
@@ -481,17 +562,15 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
         // RUG_SPONNING: verticale groef per rug-vak aan deze zijde
         // (alleen bij rug-in-sponning; geschroefde rug heeft geen groeven).
         if (config.rugMount === "sponning") {
-          const colOfSide = side === "A" ? i : i - 1;
-          for (let r = 0; r < rows; r++) {
-            if (cellFillFor(config, m, colOfSide, r) !== "rug") continue;
-            const cellBottom = levelY[r] + t;
+          for (const cell of colCells[colOfSide]) {
+            if (cell.fill !== "rug") continue;
             ops.push({
               kind: "rect",
               layer: "RUG_SPONNING",
               side,
-              x: cellBottom - RUG_GROOVE_DEPTH,
+              x: cell.y - RUG_GROOVE_DEPTH,
               y: RUG_GROOVE_BACK_OFFSET - RUG_GROOVE_WIDTH / 2,
-              w: cellH + 2 * RUG_GROOVE_DEPTH,
+              w: cell.h + 2 * RUG_GROOVE_DEPTH,
               h: RUG_GROOVE_WIDTH,
               depth: RUG_GROOVE_DEPTH,
             });
@@ -502,25 +581,25 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
       // Beddezijde: de zijde waar de bewerkingen zitten; alleen
       // binnenstaanders met blinde dado's hebben onvermijdelijk twee zijden.
       const machineSide: Side = ops.some((o) => o.side === "A") ? "A" : "B";
-      ops.push(engrave(id, Hm, D, machineSide));
+      ops.push(engrave(id, Hm, Di, machineSide));
 
       panels.push({
         id,
         type: "staander",
         material: "plaat18",
         length: Hm,
-        width: D,
+        width: Di,
         thickness: t,
         ops,
         notches: [],
         machineSide,
         place: {
-          x: i * (cellW + t),
+          x: staanderX(i),
           y: moduleBase,
           z: 0,
           w: t,
           h: Hm,
-          d: D,
+          d: Di,
         },
         module: m,
       });
@@ -529,13 +608,66 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
     // ---- Planken ------------------------------------------------------------
     const dadoInset = joinery === "dado" ? DADO_DEPTH : 0;
     for (let c = 0; c < columns; c++) {
-      for (let j = 0; j <= rows; j++) {
+      const lv = presentLevels(c);
+      const depthL = staanderDepth(c);
+      const depthR = staanderDepth(c + 1);
+      const plankX0 = c * (cellW + t) + t - dadoInset;
+      // Voorrand volgt het profiel; de uiteinden liggen exact op de diepte
+      // van de aansluitende staander zodat de voorzijde bij de naad vlak sluit.
+      const front = (x: number) => {
+        const corrL = depthL - depthAt(plankX0);
+        const corrR = depthR - depthAt(plankX0 + shelfLen);
+        return depthAt(plankX0 + x) + corrL + ((corrR - corrL) * x) / shelfLen;
+      };
+
+      // Weggelaten planken als ghost, zodat ze in 3D terug te zetten zijn.
+      for (let j = 1; j < rows; j++) {
+        if (shelfPresent(c, j)) continue;
+        ghostShelves.push({
+          key: shelfKey(m, c, j),
+          place: {
+            x: plankX0,
+            y: moduleBase + levelY[j],
+            z: 0,
+            w: shelfLen,
+            h: t,
+            d: D,
+          },
+        });
+      }
+
+      for (let idx = 0; idx < lv.length; idx++) {
+        const j = lv[idx];
         plankNo++;
         const id = `P${plankNo}`;
         const ops: Operation[] = [];
         const notches: { x: number; y: number; w: number; h: number }[] = [];
+        let contour: [number, number][] | undefined;
+        let plankWidth = D;
 
-        if (joinery === "dado") {
+        if (profiled) {
+          // Gebogen voorrand als echte contour (linksom), incl. eventuele
+          // dado-inkepingen aan de voorhoeken.
+          const N = 24;
+          const pts: [number, number][] = [
+            [0, 0],
+            [shelfLen, 0],
+          ];
+          if (joinery === "dado") {
+            const nbR = Math.min(depthR, front(shelfLen - dadoInset)) - notchLen;
+            pts.push([shelfLen, round1(nbR)], [shelfLen - dadoInset, round1(nbR)]);
+          }
+          for (let k = 0; k <= N; k++) {
+            const x = shelfLen - dadoInset - ((shelfLen - 2 * dadoInset) * k) / N;
+            pts.push([round1(x), round1(front(x))]);
+          }
+          if (joinery === "dado") {
+            const nbL = Math.min(depthL, front(dadoInset)) - notchLen;
+            pts.push([dadoInset, round1(nbL)], [0, round1(nbL)]);
+          }
+          contour = pts;
+          plankWidth = round1(Math.max(...pts.map(([, y]) => y)));
+        } else if (joinery === "dado") {
           // Hoekinkepingen: dado stopt 30 mm vóór de voorzijde, dus de
           // plankhoeken worden 7 × (30 + freesradius) ingekeept.
           notches.push({ x: 0, y: D - notchLen, w: DADO_DEPTH, h: notchLen });
@@ -545,14 +677,21 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
             w: DADO_DEPTH,
             h: notchLen,
           });
-          // Deuvelgat Ø8 per naad in het plankvlak (blind, onderzijde).
-          for (const cx of [DADO_DEPTH / 2, shelfLen - DADO_DEPTH / 2]) {
+        }
+
+        if (joinery === "dado") {
+          // Deuvelgat Ø8 per naad in het plankvlak (blind, onderzijde), in
+          // het hart van de dado van de aansluitende staander.
+          for (const [cx, dEnd] of [
+            [DADO_DEPTH / 2, depthL],
+            [shelfLen - DADO_DEPTH / 2, depthR],
+          ] as [number, number][]) {
             ops.push({
               kind: "circle",
               layer: "BOOR_8MM",
               side: "B",
               cx,
-              cy: (D - DADO_FRONT_STOP) / 2,
+              cy: (dEnd - DADO_FRONT_STOP) / 2,
               diameter: DOWEL_DIAMETER,
               depth: 10,
               through: false,
@@ -566,8 +705,9 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
           // rechteruiteinde op de B-zijde: randafstanden volgen die zijden.
           for (const end of [0, 1]) {
             const edge = end === 0 ? cabOff.a : cabOff.b;
+            const dEnd = end === 0 ? depthL : depthR;
             for (let k = 0; k < CABINEOS_PER_JOINT; k++) {
-              const cy = k === 0 ? edge : D - edge;
+              const cy = k === 0 ? edge : dEnd - edge;
               if (config.cabineoVariant === "boor15") {
                 // Variant 1: drie boringen Ø15.
                 for (const c of CABINEO_HOLE_CENTERS) {
@@ -607,7 +747,8 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
         // bovenvlak voor het vak erboven, ondervlak voor het vak eronder.
         if (config.rugMount === "sponning") {
           const rugAbove = j < rows && cellFillFor(config, m, c, j) === "rug";
-          const rugBelow = j > 0 && cellFillFor(config, m, c, j - 1) === "rug";
+          const rugBelow =
+            idx > 0 && cellFillFor(config, m, c, lv[idx - 1]) === "rug";
           for (const [has, side] of [
             [rugAbove, "A"],
             [rugBelow, "B"],
@@ -627,25 +768,27 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
         }
 
         // Planken liggen ondersteboven op het bed: gravure mee op zijde B.
-        ops.push(engrave(id, shelfLen, D, "B"));
+        ops.push(engrave(id, shelfLen, plankWidth, "B"));
 
         panels.push({
           id,
           type: "plank",
           material: "plaat18",
           length: shelfLen,
-          width: D,
+          width: plankWidth,
           thickness: t,
           ops,
           notches,
           machineSide: "B",
+          contour,
+          shelfKey: j > 0 && j < rows ? shelfKey(m, c, j) : undefined,
           place: {
-            x: c * (cellW + t) + t - dadoInset,
+            x: plankX0,
             y: moduleBase + levelY[j],
             z: 0,
             w: shelfLen,
             h: t,
-            d: D,
+            d: plankWidth,
           },
           module: m,
         });
@@ -661,12 +804,12 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
       ? RUG_GROOVE_DEPTH - RUG_CLEARANCE
       : t / 2;
     for (let c = 0; c < columns; c++) {
-      for (let r = 0; r < rows; r++) {
-        if (cellFillFor(config, m, c, r) !== "rug") continue;
+      for (const cell of colCells[c]) {
+        if (cell.fill !== "rug") continue;
         rugNo++;
         const id = `R${rugNo}`;
         const rw = round1(cellW + 2 * rugOversize);
-        const rh = round1(cellH + 2 * rugOversize);
+        const rh = round1(cell.h + 2 * rugOversize);
         panels.push({
           id,
           type: "rug",
@@ -679,7 +822,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
           machineSide: "A",
           place: {
             x: c * (cellW + t) + t - rugOversize,
-            y: moduleBase + levelY[r] + t - rugOversize,
+            y: moduleBase + cell.y - rugOversize,
             z: sponning
               ? RUG_GROOVE_BACK_OFFSET - HDF_THICKNESS / 2
               : -HDF_THICKNESS,
@@ -698,6 +841,9 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
   // ---- Plint ----------------------------------------------------------------
   if (config.base === "plint") {
     const plintLen = round1(W - 2 * t - 2);
+    // Plint achter het ondiepste punt van de voorkant.
+    let minDepth = D;
+    for (let i = 0; i <= columns; i++) minDepth = Math.min(minDepth, staanderDepth(i));
     panels.push({
       id: "PL1",
       type: "plint",
@@ -711,7 +857,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
       place: {
         x: t + 1,
         y: 0,
-        z: D - PLINTH_SETBACK - t,
+        z: minDepth - PLINTH_SETBACK - t,
         w: plintLen,
         h: PLINTH_HEIGHT,
         d: t,
@@ -800,6 +946,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
     shelfPartLength: shelfLen,
     panels,
     cells,
+    ghostShelves,
     hardware,
     warnings,
   };

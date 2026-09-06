@@ -143,6 +143,24 @@ boringen op de juiste plek zitten.
   kostenblok te tonen. Opslag in localStorage van het apparaat — geen
   echte beveiliging; voor een publieke omgeving hoort hier een login voor.
 
+### Speelse indeling en voorkantprofiel
+
+- **Planken weglaten**: tik in 3D op een tussenplank om hem weg te laten;
+  de vakken erboven en eronder versmelten tot één hoog vak (dado's,
+  boringen, rugpanelen en raycast-vakken volgen). De weggelaten plank blijft
+  als doorzichtige ghost zichtbaar — aantikken zet hem terug. Boven- en
+  onderplank zijn structureel en blijven altijd. Boven 1000 mm vakhoogte
+  waarschuwt de validatie voor ontbrekend dwarsverband.
+- **Voorkantprofiel** (recht / golf / bol / hol / schuin): de voorkant wijkt
+  over de breedte terug volgens `frontOffset(x)`. Staanders krijgen de
+  diepte op hun eigen positie (rechthoekig, dado stopt 30 mm vóór hun eigen
+  voorrand), planken een gebogen voorrand als echte contour waarvan de
+  uiteinden exact op de staanderdiepte liggen (vlakke naad). De
+  amplitude is begrensd zodat de kast nergens ondieper dan 120 mm wordt;
+  onderdelen blijven binnen de strookhoogte, dus de nesting verandert niet.
+  De DXF-contour van ondersteboven liggende planken wordt over de korte
+  zijde gespiegeld.
+
 ### Datamodel v2-klaar
 
 Elk vak heeft een `fill`-property (`open | rug | deur | lade | diagonaal`),

@@ -140,6 +140,39 @@ export type BaseType = "plint" | "pootjes" | "geen";
 export type RugMount = "geschroefd" | "sponning";
 
 /**
+ * Profiel van de voorzijde over de kastbreedte: de voorkant wijkt op
+ * positie x `frontOffset(x)` mm terug t.o.v. de volle diepte. Staanders
+ * krijgen de diepte op hun eigen positie, planken een gebogen voorrand.
+ */
+export type FrontProfileType = "recht" | "golf" | "bol" | "hol" | "schuin";
+export interface FrontProfile {
+  type: FrontProfileType;
+  /** Maximale terugwijking van de voorkant (mm). */
+  amplitude: number;
+  /** Aantal golven over de breedte (alleen bij `golf`). */
+  periodes: number;
+}
+/** Minimale resterende kastdiepte op het ondiepste punt van het profiel. */
+export const MIN_PROFILE_DEPTH = 120;
+
+export function frontOffset(profile: FrontProfile, x: number, width: number): number {
+  const u = Math.min(1, Math.max(0, x / width));
+  const A = profile.amplitude;
+  switch (profile.type) {
+    case "golf":
+      return A * (0.5 - 0.5 * Math.cos(2 * Math.PI * Math.max(1, profile.periodes) * u));
+    case "bol": // midden diepst, zijkanten wijken terug
+      return A * (1 - Math.sin(Math.PI * u));
+    case "hol": // zijkanten diepst, midden wijkt terug
+      return A * Math.sin(Math.PI * u);
+    case "schuin":
+      return A * u;
+    default:
+      return 0;
+  }
+}
+
+/**
  * Vulling van een vak. v1 gebruikt alleen `open` en `rug`;
  * `deur`, `lade` en `diagonaal` zitten al in het datamodel voor v2.
  */
@@ -174,6 +207,12 @@ export interface CabinetConfig {
   cellFills: Record<string, CellFill>;
   /** Muurbevestiging (2 L-beugels) opnemen. */
   wallMount: boolean;
+  /**
+   * Weggelaten tussenplanken, key = `${module}:${col}:${level}` (level 1..rows-1).
+   * De vakken boven en onder de weggelaten plank versmelten tot één vak.
+   */
+  omittedShelves: Record<string, true>;
+  frontProfile: FrontProfile;
 }
 
 export const DEFAULT_CONFIG: CabinetConfig = {
@@ -192,6 +231,8 @@ export const DEFAULT_CONFIG: CabinetConfig = {
   thickness: 18,
   cellFills: {},
   wallMount: true,
+  omittedShelves: {},
+  frontProfile: { type: "recht", amplitude: 60, periodes: 2 },
 };
 
 // ---- Diepte-opties (strip-nesting) ------------------------------------------
@@ -223,6 +264,10 @@ export function stripsPerSheetForDepth(depth: number): number {
 
 export function cellKey(module: number, col: number, row: number): string {
   return `${module}:${col}:${row}`;
+}
+
+export function shelfKey(module: number, col: number, level: number): string {
+  return `${module}:${col}:${level}`;
 }
 
 export function formatMm(v: number): string {
