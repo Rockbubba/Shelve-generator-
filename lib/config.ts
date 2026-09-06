@@ -29,21 +29,24 @@ export const DADO_DEPTH = 7; // blinde dado diepte in staander
 export const DADO_FRONT_STOP = 30; // dado stopt zoveel mm vóór de voorzijde
 export const DOWEL_DIAMETER = 8;
 export const DOWEL_LENGTH = 35;
-// Officiële Lamello Cabineo 8-maten: behuizing 33,8 × 16,5 × 10,8 mm,
-// pocket 11 mm diep, boutgat Ø5 (min. 8 mm diep), frees Ø12 of kleiner.
-// Voor productie kan ook de officiële Lamello CAM-macro/template op het
-// pocket-hart worden toegepast.
-export const CABINEO_POCKET_WIDTH = 33.8; // langs de naad
-export const CABINEO_POCKET_HEIGHT = 16.5; // haaks op de naad (vanaf plankeinde)
+// Officiële Lamello Cabineo-bewerking (maatblad "Bewerking:
+// bodem/tussenplank/bovenkant"): de pocket is de vereniging van drie
+// Ø15-cirkels met de harten op 3,6 / 14,8 / 26 mm vanaf de naadrand,
+// 11 mm diep. Drie plaatsingsvarianten:
+//  - boor15:  drie boringen Ø15 (variant 1)
+//  - frees10: exacte verenigingscontour, frees Ø10 of kleiner (variant 2;
+//             concave overgangen op x = 9,2 en 20,4)
+//  - frees12: contour met rechte brugjes op y = ±6 tussen de cirkels
+//             (variant 3; x = 8,1–10,3 en 19,3–21,5) zodat een Ø12-frees past
+export type CabineoVariant = "boor15" | "frees10" | "frees12";
 export const CABINEO_POCKET_DEPTH = 11;
-/**
- * Hoekradius van de pocketcontour. Lamello schrijft een frees van Ø12 of
- * kleiner voor, dus de radius moet ≥ 6 zijn; 6 mm past gegarandeerd binnen
- * elke behuizingshoek. Wie de officiële Lamello-template gebruikt kan de
- * radius hier op de templatewaarde zetten.
- */
-export const CABINEO_POCKET_CORNER_RADIUS = 6;
+export const CABINEO_HOLE_DIAMETER = 15;
+export const CABINEO_HOLE_CENTERS = [3.6, 14.8, 26]; // vanaf de naadrand
+export const CABINEO_FLAT_HALF_WIDTH = 6; // brugjes-halfbreedte bij frees12
+// Zijkant (staander): boor Ø5 (HPL: Ø5,5), diepte 8 mm bij Cabineo 8
+// (zwarte schroef); 12 mm bij Cabineo 12.
 export const CABINEO_BOLT_DIAMETER = 5;
+export const CABINEO_SIDE_HOLE_DEPTH = 8;
 export const CABINEOS_PER_JOINT = 2;
 /**
  * Afstand van de Cabineo's tot de voor-/achterrand, per staanderzijde
@@ -97,6 +100,8 @@ export interface CabinetConfig {
   columns: number;
   rows: number;
   joinery: Joinery;
+  /** Plaatsingsvariant van de Cabineo-pocket (boor Ø15 / frees Ø10 / frees Ø12). */
+  cabineoVariant: CabineoVariant;
   base: BaseType;
   rugMount: RugMount;
   /** Gemeten plaatdikte (nominaal 18, bv. 17.8 gemeten). */
@@ -117,6 +122,7 @@ export const DEFAULT_CONFIG: CabinetConfig = {
   columns: 4,
   rows: 5,
   joinery: "dado",
+  cabineoVariant: "frees10", // onze freesbaan is Ø8 → variant "Ø10 of kleiner"
   base: "plint",
   rugMount: "geschroefd",
   thickness: 18,

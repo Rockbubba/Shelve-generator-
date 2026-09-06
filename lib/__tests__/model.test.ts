@@ -9,9 +9,14 @@ import {
   SHEET_WIDTH,
   depthOption,
 } from "../config";
-import { buildCabinetModel, CircleOp, RectOp } from "../model";
+import {
+  buildCabinetModel,
+  cabineoPocketContour,
+  CircleOp,
+  RectOp,
+} from "../model";
 import { nestPanels } from "../nesting";
-import { panelContour, panelOpsInBedFrame, roundedRectContour, sheetToDxf } from "../dxf";
+import { panelContour, sheetToDxf } from "../dxf";
 
 /** Acceptatiekast: 1800 × 2000 × ~398, 4 kolommen × 5 rijen. */
 const ACCEPT: CabinetConfig = {
@@ -199,7 +204,7 @@ describe("dxf-output (acceptatiecriterium 3)", () => {
     const cabNesting = nestPanels(cab.panels, ACCEPT.depth);
     const all = cabNesting.sheets.map((s) => sheetToDxf(s)).join("\n");
     expect(all).toContain("BOOR_5MM_DOOR");
-    expect(all).toContain("BOOR_5MM_D15");
+    expect(all).toContain("BOOR_5MM_D8"); // buitenstaanders: blind, officiële diepte
     expect(all).toContain("CABINEO_11MM");
 
     // Geen doorlopend gat in een buitenwang (zichtbaar van buiten).
@@ -234,22 +239,50 @@ describe("dxf-output (acceptatiecriterium 3)", () => {
     }
   });
 
-  it("cabineo-pocket is een exacte afgeronde contour (33,8 × 16,5, R6)", () => {
-    const cab = buildCabinetModel({ ...ACCEPT, joinery: "cabineo" });
-    const plank = cab.panels.find((p) => p.type === "plank")!;
-    const pockets = panelOpsInBedFrame(plank).filter(
-      (op) => op.kind === "rect" && op.layer.startsWith("CABINEO"),
+  it("cabineo-pocket volgt het Lamello-maatblad (3 × Ø15 op 3,6/14,8/26)", () => {
+    // Variant boor15: drie boringen Ø15 per pocket.
+    const boor = buildCabinetModel({
+      ...ACCEPT,
+      joinery: "cabineo",
+      cabineoVariant: "boor15",
+    });
+    const boorPlank = boor.panels.find((p) => p.type === "plank")!;
+    const holes = boorPlank.ops.filter(
+      (op): op is CircleOp => op.kind === "circle" && op.layer === "BOOR_15MM",
     );
-    expect(pockets.length).toBe(4); // 2 per naad, 2 naden
-    for (const p of pockets) {
-      if (p.kind !== "rect") continue;
-      expect(p.h).toBeCloseTo(33.8, 5); // langs de naad
-      expect(p.w).toBeCloseTo(16.5, 5); // vanaf het plankeinde
-      expect(p.radius).toBeCloseTo(6, 5);
+    expect(holes.length).toBe(3 * 2 * 2); // 3 cirkels × 2 posities × 2 naden
+    const leftXs = Array.from(
+      new Set(
+        holes
+          .filter((h) => h.cx < boorPlank.length / 2)
+          .map((h) => h.cx),
+      ),
+    ).sort((a, b) => a - b);
+    expect(leftXs).toEqual([3.6, 14.8, 26]);
+    for (const h of holes) expect(h.diameter).toBe(15);
+
+    // Gefreesde varianten: exacte verenigingscontour van de drie cirkels.
+    for (const variant of ["frees10", "frees12"] as const) {
+      const contour = cabineoPocketContour(variant);
+      const xs = contour.map(([x]) => x);
+      const ys = contour.map(([, y]) => y);
+      // Diepste punt = derde cirkel + straal (26 + 7,5), breedte = Ø15.
+      expect(Math.max(...xs)).toBeCloseTo(33.5, 1);
+      expect(Math.max(...ys)).toBeCloseTo(7.5, 1);
+      expect(Math.min(...ys)).toBeCloseTo(-7.5, 1);
+      // Aan de naadrand is de opening 2 × 6,6 breed.
+      const first = contour[0];
+      expect(first[0]).toBeCloseTo(0, 1);
+      expect(Math.abs(first[1])).toBeCloseTo(6.6, 1);
     }
-    // De contour zelf heeft gepolygoniseerde hoekbogen, geen scherpe hoeken.
-    const contour = roundedRectContour(0, 0, 16.5, 33.8, 6);
-    expect(contour.length).toBeGreaterThan(16);
+    // frees12 heeft rechte brugjes op y = ±6 tussen de cirkels.
+    const f12 = cabineoPocketContour("frees12");
+    expect(
+      f12.some(([x, y]) => Math.abs(y - 6) < 0.05 && Math.abs(x - 8.1) < 0.1),
+    ).toBe(true);
+    expect(
+      f12.some(([x, y]) => Math.abs(y - 6) < 0.05 && Math.abs(x - 10.3) < 0.1),
+    ).toBe(true);
   });
 
   it("staandercontour is een rechthoek", () => {

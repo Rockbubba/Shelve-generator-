@@ -21,11 +21,13 @@ import {
   CABINEO_BOLT_DIAMETER,
   CABINEO_EDGE_OFFSET_A,
   CABINEO_EDGE_OFFSET_B,
-  CABINEO_POCKET_CORNER_RADIUS,
+  CABINEO_FLAT_HALF_WIDTH,
+  CABINEO_HOLE_CENTERS,
+  CABINEO_HOLE_DIAMETER,
   CABINEO_POCKET_DEPTH,
-  CABINEO_POCKET_HEIGHT,
-  CABINEO_POCKET_WIDTH,
+  CABINEO_SIDE_HOLE_DEPTH,
   CABINEOS_PER_JOINT,
+  CabineoVariant,
   HDF_THICKNESS,
   KERF,
   MAX_MODULE_HEIGHT,
@@ -53,6 +55,7 @@ export type Layer =
   | "DADO_7MM"
   | "BOOR_8MM"
   | "BOOR_5MM"
+  | "BOOR_15MM"
   | "CABINEO_11MM"
   | "RUG_SPONNING"
   | "GRAVURE";
@@ -93,7 +96,16 @@ export interface TextOp {
   height: number;
 }
 
-export type Operation = RectOp | CircleOp | TextOp;
+/** Vrije gesloten pocketcontour (bijv. de Cabineo-klaverbladvorm). */
+export interface PathOp {
+  kind: "path";
+  layer: Layer;
+  side: Side;
+  points: [number, number][];
+  depth: number;
+}
+
+export type Operation = RectOp | CircleOp | TextOp | PathOp;
 
 export type PanelType = "staander" | "plank" | "plint" | "rug";
 export type Material = "plaat18" | "hdf4";
@@ -260,6 +272,71 @@ export function cellFillFor(config: CabinetConfig, module: number, col: number, 
   return defaultCellFill(col, row, config.columns, config.rows);
 }
 
+// ---- Cabineo-pocketcontour --------------------------------------------------
+
+/**
+ * Exacte gefreesde Cabineo-pocketcontour volgens het Lamello-maatblad:
+ * de vereniging van drie Ø15-cirkels met de harten op 3,6 / 14,8 / 26 mm
+ * vanaf de naadrand. Bij `frees10` lopen de bogen door tot hun snijpunten
+ * (x = 9,2 en 20,4); bij `frees12` worden de concave overgangen vervangen
+ * door rechte brugjes op y = ±6 (x = 8,1–10,3 en 19,3–21,5) zodat een
+ * Ø12-frees past. Coördinaten: x vanaf het plankeinde, y rond de as;
+ * gesloten linksom (sluiting loopt over de naadrand x = 0). Bogen worden
+ * gepolygoniseerd (stap ~4°) zodat elke DXF-lezer de vorm 1:1 overneemt.
+ */
+export function cabineoPocketContour(
+  variant: Exclude<CabineoVariant, "boor15">,
+): [number, number][] {
+  const r = CABINEO_HOLE_DIAMETER / 2;
+  const [c1, c2, c3] = CABINEO_HOLE_CENTERS;
+  const deg = Math.PI / 180;
+  const step = 4;
+
+  // Overgangshoek tussen twee cirkels (t.o.v. het cirkelhart, bovenhelft):
+  // frees10 → tot het snijpunt van de cirkels; frees12 → tot y = ±6,
+  // waarna een recht brugje naar de volgende cirkel loopt.
+  const toDeg = (rad: number) => (rad / Math.PI) * 180;
+  const halfGap = (c2 - c1) / 2; // 5,6
+  const aJoin =
+    variant === "frees10"
+      ? toDeg(Math.atan2(Math.sqrt(r * r - halfGap * halfGap), halfGap))
+      : toDeg(
+          Math.atan2(
+            CABINEO_FLAT_HALF_WIDTH,
+            Math.sqrt(r * r - CABINEO_FLAT_HALF_WIDTH ** 2),
+          ),
+        );
+  // Hoek waar de eerste cirkel de naadrand (x = 0) snijdt.
+  const edgeY = Math.sqrt(r * r - c1 * c1);
+  const aEdge = (Math.atan2(edgeY, -c1) / Math.PI) * 180;
+
+  const arc = (cx: number, a0: number, a1: number): [number, number][] => {
+    const pts: [number, number][] = [];
+    const n = Math.max(2, Math.ceil(Math.abs(a1 - a0) / step));
+    for (let i = 0; i <= n; i++) {
+      const a = (a0 + ((a1 - a0) * i) / n) * deg;
+      pts.push([cx + r * Math.cos(a), r * Math.sin(a)]);
+    }
+    return pts;
+  };
+
+  const pts: [number, number][] = [
+    ...arc(c1, aEdge, aJoin),
+    ...arc(c2, 180 - aJoin, aJoin),
+    ...arc(c3, 180 - aJoin, -(180 - aJoin)),
+    ...arc(c2, -aJoin, -(180 - aJoin)),
+    ...arc(c1, -aJoin, -aEdge),
+  ];
+  // Opeenvolgende (vrijwel) identieke punten wegfilteren.
+  const out: [number, number][] = [];
+  for (const p of pts) {
+    const prev = out[out.length - 1];
+    if (prev && Math.abs(prev[0] - p[0]) < 0.005 && Math.abs(prev[1] - p[1]) < 0.005) continue;
+    out.push([Math.round(p[0] * 1000) / 1000, Math.round(p[1] * 1000) / 1000]);
+  }
+  return out;
+}
+
 // ---- Hoofdfunctie -----------------------------------------------------------
 
 export function buildCabinetModel(config: CabinetConfig): CabinetModel {
@@ -387,7 +464,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
                 cx: levelY[j] + t / 2,
                 cy,
                 diameter: CABINEO_BOLT_DIAMETER,
-                depth: isOuter ? 15 : t,
+                depth: isOuter ? CABINEO_SIDE_HOLE_DEPTH : t,
                 through: !isOuter,
               });
             }
@@ -476,25 +553,46 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
             });
           }
         } else {
-          // Cabineo-pockets in het plankvlak (onderzijde, tegen elk uiteinde).
+          // Cabineo-pockets in het plankvlak (onderzijde, tegen elk uiteinde)
+          // volgens het officiële maatblad: drie Ø15-cirkels haaks op de
+          // naad, harten op 3,6 / 14,8 / 26 mm vanaf het plankeinde.
           // Linkeruiteinde sluit aan op de A-zijde van een staander,
           // rechteruiteinde op de B-zijde: randafstanden volgen die zijden.
           for (const end of [0, 1]) {
             const edge = end === 0 ? CABINEO_EDGE_OFFSET_A : CABINEO_EDGE_OFFSET_B;
             for (let k = 0; k < CABINEOS_PER_JOINT; k++) {
               const cy = k === 0 ? edge : D - edge;
-              const x0 = end === 0 ? 0 : shelfLen - CABINEO_POCKET_HEIGHT;
-              ops.push({
-                kind: "rect",
-                layer: "CABINEO_11MM",
-                side: "B",
-                x: x0,
-                y: cy - CABINEO_POCKET_WIDTH / 2,
-                w: CABINEO_POCKET_HEIGHT,
-                h: CABINEO_POCKET_WIDTH,
-                depth: CABINEO_POCKET_DEPTH,
-                radius: CABINEO_POCKET_CORNER_RADIUS,
-              });
+              if (config.cabineoVariant === "boor15") {
+                // Variant 1: drie boringen Ø15.
+                for (const c of CABINEO_HOLE_CENTERS) {
+                  ops.push({
+                    kind: "circle",
+                    layer: "BOOR_15MM",
+                    side: "B",
+                    cx: end === 0 ? c : shelfLen - c,
+                    cy,
+                    diameter: CABINEO_HOLE_DIAMETER,
+                    depth: CABINEO_POCKET_DEPTH,
+                    through: false,
+                  });
+                }
+              } else {
+                // Variant 2/3: exacte gefreesde klaverbladcontour.
+                const contour = cabineoPocketContour(config.cabineoVariant);
+                ops.push({
+                  kind: "path",
+                  layer: "CABINEO_11MM",
+                  side: "B",
+                  points: contour.map(
+                    ([px, py]) =>
+                      [end === 0 ? px : shelfLen - px, cy + py] as [
+                        number,
+                        number,
+                      ],
+                  ),
+                  depth: CABINEO_POCKET_DEPTH,
+                });
+              }
             }
           }
         }

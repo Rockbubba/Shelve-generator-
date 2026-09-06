@@ -42,6 +42,21 @@ function PlacementOps({ pl, sheetW }: { pl: Placement; sheetW: number }) {
             />
           );
         }
+        if (op.kind === "path") {
+          return (
+            <polygon
+              key={i}
+              points={op.points
+                .map(([px, py]) => `${pl.x + px},${sheetW - (pl.y + py)}`)
+                .join(" ")}
+              fill={color}
+              fillOpacity={0.25}
+              stroke={color}
+              strokeWidth={2}
+              strokeDasharray={dash}
+            />
+          );
+        }
         return (
           <circle
             key={i}

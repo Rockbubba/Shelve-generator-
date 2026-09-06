@@ -178,6 +178,18 @@ export default function Configurator() {
             value={config.joinery}
             onChange={(joinery) => update({ joinery })}
           />
+          {config.joinery === "cabineo" && (
+            <Segmented
+              label="Cabineo-bewerking"
+              options={[
+                { value: "frees10", label: "Frees", sub: "Ø10 of kleiner" },
+                { value: "frees12", label: "Frees Ø12", sub: "met brugjes" },
+                { value: "boor15", label: "Boren", sub: "3 × Ø15" },
+              ]}
+              value={config.cabineoVariant}
+              onChange={(cabineoVariant) => update({ cabineoVariant })}
+            />
+          )}
           <Segmented
             label="Rugbevestiging"
             options={[

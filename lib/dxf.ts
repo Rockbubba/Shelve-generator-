@@ -45,6 +45,7 @@ function layerColor(name: string): number {
  */
 export type BedOp =
   | { kind: "rect"; layer: string; secondary: boolean; x: number; y: number; w: number; h: number; radius: number }
+  | { kind: "path"; layer: string; secondary: boolean; points: [number, number][] }
   | { kind: "circle"; layer: string; secondary: boolean; cx: number; cy: number; r: number }
   | { kind: "text"; layer: string; secondary: boolean; x: number; y: number; height: number; text: string };
 
@@ -95,6 +96,17 @@ export function panelOpsInBedFrame(panel: Panel): BedOp[] {
         else cy = W - cy;
       }
       return { kind: "circle", layer, secondary, cx, cy, r: op.diameter / 2 };
+    }
+    if (op.kind === "path") {
+      const points = op.points.map(
+        ([px, py]) =>
+          (mirror
+            ? short
+              ? [L - px, py]
+              : [px, W - py]
+            : [px, py]) as [number, number],
+      );
+      return { kind: "path", layer, secondary, points };
     }
     let { x, y } = op;
     if (mirror) {
@@ -266,6 +278,13 @@ function emitBedOp(dxf: DxfBuilder, placement: Placement, op: BedOp) {
         op.w,
         op.h,
         op.radius,
+      ),
+    );
+  } else if (op.kind === "path") {
+    dxf.polyline(
+      op.layer,
+      op.points.map(
+        ([px, py]) => [placement.x + px, placement.y + py] as [number, number],
       ),
     );
   } else if (op.kind === "circle") {
