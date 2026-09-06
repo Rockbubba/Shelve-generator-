@@ -105,7 +105,7 @@ Het ontwerp minimaliseert omklappen op het bed:
   gefreesd.
 - **Cabineo-boutgaten**: in binnenstaanders doorlopend vanaf één zijde
   (de uitgang wordt afgedekt door de plank aan de andere kant); in
-  buitenstaanders blind (Ø5 × 15 mm) vanaf de binnenzijde, zodat de
+  buitenstaanders blind (Ø5 × 8 mm bij Cabineo 8, 12 mm bij Cabineo 12) vanaf de binnenzijde, zodat de
   buitenwang gaaf blijft. De randafstanden verschillen per staanderzijde
   (60 vs 100 mm) zodat bouten van linker- en rechtervak elkaar niet
   raken. Een Cabineo-kast is daarmee **volledig éénzijdig**.
@@ -145,10 +145,11 @@ boringen op de juiste plek zitten.
 
 ### Speelse indeling en voorkantprofiel
 
-- **Planken weglaten**: tik in 3D op een tussenplank om hem weg te laten;
-  de vakken erboven en eronder versmelten tot één hoog vak (dado's,
-  boringen, rugpanelen en raycast-vakken volgen). De weggelaten plank blijft
-  als doorzichtige ghost zichtbaar — aantikken zet hem terug. Boven- en
+- **Planken weglaten**: selecteer een tussenplank (in 3D of in de editor)
+  en kies "Plank weglaten"; de vakken erboven en eronder versmelten tot één
+  hoog vak (dado's, boringen, rugpanelen en raycast-vakken volgen). De
+  weggelaten plank blijft als doorzichtige ghost zichtbaar — aantikken zet
+  hem terug. Boven- en
   onderplank zijn structureel en blijven altijd. Boven 1000 mm vakhoogte
   waarschuwt de validatie voor ontbrekend dwarsverband.
 - **Vakhoogtes per kolom**: in stap 2 staat een compact vooraanzicht van de
