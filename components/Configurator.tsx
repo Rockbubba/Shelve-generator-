@@ -5,11 +5,14 @@ import {
   CabinetConfig,
   DEFAULT_CONFIG,
   DEPTH_OPTIONS,
+  MAX_DEPTH,
   MAX_HEIGHT,
   MAX_WIDTH,
+  MIN_DEPTH,
   MIN_HEIGHT,
   MIN_WIDTH,
   formatMm,
+  stripsPerSheetForDepth,
 } from "@/lib/config";
 import { buildCabinetModel, cellFillFor } from "@/lib/model";
 import { nestPanels } from "@/lib/nesting";
@@ -41,6 +44,15 @@ export default function Configurator() {
     () => nestPanels(model.panels, config.depth),
     [model, config.depth],
   );
+
+  const isCustomDepth = !DEPTH_OPTIONS.some(
+    (o) => Math.abs(o.depth - config.depth) < 0.05,
+  );
+  const customDepthHint = useMemo(() => {
+    const n = stripsPerSheetForDepth(config.depth);
+    const leftover = 1200 - (n * config.depth + (n - 1) * 8);
+    return `${n} stroken per plaat — rest ${formatMm(Math.max(0, leftover))} mm`;
+  }, [config.depth]);
 
   const update = useCallback((patch: Partial<CabinetConfig>) => {
     setConfig((c) => ({ ...c, ...patch }));
@@ -94,15 +106,31 @@ export default function Configurator() {
       {step === 0 && (
         <div>
           <Segmented
-            label="Diepte (uit plaatbreedte)"
-            options={DEPTH_OPTIONS.map((o) => ({
-              value: o.depth,
-              label: `${formatMm(o.depth)} mm`,
-              sub: `${o.stripsPerSheet} stroken`,
-            }))}
-            value={config.depth}
-            onChange={(depth) => update({ depth })}
+            label="Diepte"
+            options={[
+              ...DEPTH_OPTIONS.map((o) => ({
+                value: o.depth,
+                label: `${formatMm(o.depth)} mm`,
+                sub: `${o.stripsPerSheet} stroken`,
+              })),
+              { value: -1, label: "Eigen", sub: "vrije maat" },
+            ]}
+            value={isCustomDepth ? -1 : config.depth}
+            onChange={(depth) =>
+              update({ depth: depth === -1 ? 200 : depth })
+            }
           />
+          {isCustomDepth && (
+            <Stepper
+              label="Eigen diepte"
+              value={config.depth}
+              min={MIN_DEPTH}
+              max={MAX_DEPTH}
+              step={10}
+              onChange={(depth) => update({ depth })}
+              hint={customDepthHint}
+            />
+          )}
           <Stepper
             label="Breedte"
             value={config.width}

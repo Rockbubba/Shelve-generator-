@@ -52,9 +52,17 @@ export const CABINEOS_PER_JOINT = 2;
  * Afstand van de Cabineo's tot de voor-/achterrand, per staanderzijde
  * verschillend zodat de doorlopende boutgaten van linker- en rechtervak
  * elkaar in de staander niet raken en alles vanaf één zijde geboord wordt.
+ * Bij ondiepe kasten schalen de afstanden mee zodat de vier posities
+ * (a, b, D−b, D−a) verdeeld blijven.
  */
 export const CABINEO_EDGE_OFFSET_A = 60;
 export const CABINEO_EDGE_OFFSET_B = 100;
+
+export function cabineoEdgeOffsets(depth: number): { a: number; b: number } {
+  const a = Math.min(CABINEO_EDGE_OFFSET_A, Math.round(depth / 4));
+  const b = Math.min(CABINEO_EDGE_OFFSET_B, Math.round(depth / 2 - 20));
+  return { a, b };
+}
 
 // ---- Kast -------------------------------------------------------------------
 export const MAX_MODULE_HEIGHT = 2400;
@@ -65,6 +73,9 @@ export const WALL_BRACKET_MANDATORY_HEIGHT = 1500;
 
 export const MIN_WIDTH = 300;
 export const MAX_WIDTH = 4000;
+// Vrije kastdiepte: begrensd door wat er als strook op de plaat past.
+export const MIN_DEPTH = 120;
+export const MAX_DEPTH = depthOption(2); // 596
 export const MIN_HEIGHT = 300;
 export const MAX_HEIGHT = 4000;
 export const MIN_CELL_WIDTH = 150;

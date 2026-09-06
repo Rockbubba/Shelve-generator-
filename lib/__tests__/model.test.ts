@@ -341,6 +341,48 @@ describe("éénzijdig frezen", () => {
   });
 });
 
+describe("eigen kastdiepte", () => {
+  it("diepte 200 mm nest in 5 stroken en respecteert de marges", () => {
+    const model = buildCabinetModel({ ...ACCEPT, depth: 200 });
+    const nesting = nestPanels(model.panels, 200);
+    expect(nesting.errors).toHaveLength(0);
+    for (const p of model.panels.filter((x) => x.material === "plaat18")) {
+      expect(p.width).toBeLessThanOrEqual(200);
+    }
+    // 5 stroken van 200 + 4 freesbanen = 1032 ≤ 1200.
+    const ys = new Set(
+      nesting.sheets.flatMap((s) => s.placements.map((pl) => pl.y)),
+    );
+    expect(ys.size).toBeLessThanOrEqual(5);
+    for (const sheet of nesting.sheets) {
+      for (const pl of sheet.placements) {
+        expect(pl.y + pl.width).toBeLessThanOrEqual(SHEET_WIDTH - SHEET_MARGIN + 0.01);
+      }
+    }
+  });
+
+  it("cabineo-posities schalen mee bij ondiepe kasten", () => {
+    const model = buildCabinetModel({ ...ACCEPT, depth: 200, joinery: "cabineo" });
+    const inner = model.panels.find((p) => p.id === "S2")!;
+    const cys = inner.ops
+      .filter((op): op is CircleOp => op.kind === "circle")
+      .map((op) => op.cy)
+      .sort((a, b) => a - b);
+    // Vier verdeelde posities (a, b, D−b, D−a), minimaal 20 mm uit elkaar.
+    const unique = Array.from(new Set(cys));
+    expect(unique.length).toBe(4);
+    for (let i = 1; i < unique.length; i++) {
+      expect(unique[i] - unique[i - 1]).toBeGreaterThanOrEqual(20);
+    }
+    expect(model.warnings.some((w) => w.includes("Cabineo"))).toBe(false);
+  });
+
+  it("waarschuwt wanneer de diepte te klein is voor cabineo", () => {
+    const model = buildCabinetModel({ ...ACCEPT, depth: 130, joinery: "cabineo" });
+    expect(model.warnings.some((w) => w.includes("Cabineo"))).toBe(true);
+  });
+});
+
 describe("stabiliteit en modules", () => {
   it("waarschuwt zonder rug en zonder muurbevestiging", () => {
     const model = buildCabinetModel({

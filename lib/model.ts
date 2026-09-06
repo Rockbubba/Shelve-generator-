@@ -19,8 +19,7 @@ import {
   DADO_FRONT_STOP,
   DOWEL_DIAMETER,
   CABINEO_BOLT_DIAMETER,
-  CABINEO_EDGE_OFFSET_A,
-  CABINEO_EDGE_OFFSET_B,
+  cabineoEdgeOffsets,
   CABINEO_FLAT_HALF_WIDTH,
   CABINEO_HOLE_CENTERS,
   CABINEO_HOLE_DIAMETER,
@@ -347,6 +346,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
   const W = snap.snappedWidth;
   const cellW = snap.cellWidth;
   const shelfLen = snap.shelfPartLength;
+  const cabOff = cabineoEdgeOffsets(D);
 
   // Modules: hoger dan MAX_MODULE_HEIGHT wordt gestapeld.
   const moduleCount = Math.max(1, Math.ceil(config.height / MAX_MODULE_HEIGHT));
@@ -453,8 +453,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
             // blind vanaf de binnenzijde, anders zit er een zichtbaar gat
             // in de buitenwang — dat is meteen hun enige bewerkingszijde.
             const isOuter = i === 0 || i === columns;
-            const edge =
-              side === "A" ? CABINEO_EDGE_OFFSET_A : CABINEO_EDGE_OFFSET_B;
+            const edge = side === "A" ? cabOff.a : cabOff.b;
             for (let k = 0; k < CABINEOS_PER_JOINT; k++) {
               const cy = k === 0 ? edge : D - edge;
               ops.push({
@@ -559,7 +558,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
           // Linkeruiteinde sluit aan op de A-zijde van een staander,
           // rechteruiteinde op de B-zijde: randafstanden volgen die zijden.
           for (const end of [0, 1]) {
-            const edge = end === 0 ? CABINEO_EDGE_OFFSET_A : CABINEO_EDGE_OFFSET_B;
+            const edge = end === 0 ? cabOff.a : cabOff.b;
             for (let k = 0; k < CABINEOS_PER_JOINT; k++) {
               const cy = k === 0 ? edge : D - edge;
               if (config.cabineoVariant === "boor15") {
@@ -762,6 +761,11 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
     if (p.material === "plaat18" && p.width > D + 0.01 && p.type !== "plint") {
       warnings.push(`Onderdeel ${p.id} is breder dan de kastdiepte.`);
     }
+  }
+  if (joinery === "cabineo" && cabOff.b - cabOff.a < 20) {
+    warnings.push(
+      `Kastdiepte ${D} mm is te klein om de Cabineo's van linker- en rechtervak (Ø15-pockets) vrij van elkaar te houden — maak de kast dieper of kies blinde dado.`,
+    );
   }
   if (cellW < MIN_CELL_WIDTH) {
     warnings.push(
