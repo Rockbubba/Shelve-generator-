@@ -205,8 +205,9 @@ boringen op de juiste plek zitten.
   exact samenvallen.
 - **Opslaan en herstellen** (`lib/storage.ts`, `components/SaveMenu.tsx`):
   elke wijziging wordt automatisch in de browser bewaard (localStorage,
-  inclusief de actieve stap) en na een refresh hersteld. Via "Opslaan /
-  laden" bewaart de klant benoemde ontwerpen, laadt of verwijdert ze, en
+  inclusief de actieve stap) en na een refresh hersteld. Via het
+  bewaar-icoon rechtsboven in de 3D-viewer opent een dialoog waarin de klant
+  benoemde ontwerpen bewaart, laadt of verwijdert, en
   kopieert een deellink (`?o=…`, alleen de afwijkingen van de standaard als
   base64url) om het ontwerp op een ander apparaat te openen of naar ons te
   sturen. "Opnieuw beginnen" zet alles terug naar de standaardkast. Oudere

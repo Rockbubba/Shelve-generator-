@@ -37,7 +37,7 @@ import BottomSheet, { SheetSnap } from "./BottomSheet";
 import NestingPreview from "./NestingPreview";
 import BomView from "./BomView";
 import LayoutEditor from "./LayoutEditor";
-import SaveMenu from "./SaveMenu";
+import SaveDialog, { SaveButton } from "./SaveMenu";
 import { configFromUrl, loadDraft, saveDraft } from "@/lib/storage";
 import { Segmented, Stepper, Toggle } from "./controls";
 
@@ -54,6 +54,7 @@ export default function Configurator() {
   const restored = useRef(false);
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [restoreNote, setRestoreNote] = useState<string | null>(null);
+  const [saveOpen, setSaveOpen] = useState(false);
 
   // Herstel: deellink in de URL gaat vóór het automatisch bewaarde concept.
   useEffect(() => {
@@ -199,28 +200,38 @@ export default function Configurator() {
     </div>
   );
 
-  const saveMenu = (
+  /** Overlay in de viewer: opslaan-icoon rechtsboven en herstelmelding. */
+  const viewerOverlay = (
     <>
+      <SaveButton onClick={() => setSaveOpen(true)} />
       {restoreNote && (
-        <p className="mb-2 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs text-emerald-800" role="status">
+        <p
+          className="pointer-events-none absolute left-3 top-3 z-10 rounded-lg bg-emerald-50/95 px-3 py-1.5 text-xs text-emerald-800 shadow"
+          role="status"
+        >
           {restoreNote}
         </p>
       )}
-      <SaveMenu
-        config={config}
-        lastSavedAt={lastSavedAt}
-        onLoad={(c) => {
-          setConfig(c);
-          setSelectedShelf(null);
-          setStep(0);
-        }}
-        onReset={() => {
-          setConfig(DEFAULT_CONFIG);
-          setSelectedShelf(null);
-          setStep(0);
-        }}
-      />
     </>
+  );
+
+  const saveDialog = (
+    <SaveDialog
+      open={saveOpen}
+      onClose={() => setSaveOpen(false)}
+      config={config}
+      lastSavedAt={lastSavedAt}
+      onLoad={(c) => {
+        setConfig(c);
+        setSelectedShelf(null);
+        setStep(0);
+      }}
+      onReset={() => {
+        setConfig(DEFAULT_CONFIG);
+        setSelectedShelf(null);
+        setStep(0);
+      }}
+    />
   );
 
   const stepNav = (
@@ -246,7 +257,6 @@ export default function Configurator() {
 
   const settings = (
     <div>
-      {saveMenu}
       {stepNav}
       {step === 0 && (
         <div>
@@ -908,6 +918,7 @@ export default function Configurator() {
 
   return (
     <div className="h-dvh">
+      {saveDialog}
       {/* Mobiel: 3D bovenin (sticky), bottom sheet eronder. */}
       <div className="lg:hidden">
         <div className="fixed inset-x-0 top-0 h-[55dvh]">
@@ -917,6 +928,7 @@ export default function Configurator() {
             onShelfTap={onShelfTap}
             selectedShelf={selectedShelf}
           />
+          {viewerOverlay}
         </div>
         <BottomSheet snap={snap} onSnapChange={setSnap} peek={peek} footer={navButtons}>
           {settings}
@@ -937,6 +949,7 @@ export default function Configurator() {
             onShelfTap={onShelfTap}
             selectedShelf={selectedShelf}
           />
+          {viewerOverlay}
         </main>
         <aside className="overflow-y-auto border-l border-neutral-200 p-4">
           <div className="mb-3 rounded-2xl bg-neutral-900 p-4 text-white">
