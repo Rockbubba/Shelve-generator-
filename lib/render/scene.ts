@@ -18,6 +18,8 @@ export class CabinetScene {
   private shelfTargets: THREE.Mesh[] = [];
   private ghostMat: THREE.MeshBasicMaterial;
   private toonMatSelected: THREE.MeshToonMaterial;
+  private feetMat: THREE.MeshToonMaterial;
+  private gradTex: THREE.CanvasTexture;
   private toonMat: THREE.MeshToonMaterial;
   private toonMatHdf: THREE.MeshToonMaterial;
   private edgeMat: THREE.LineBasicMaterial;
@@ -58,6 +60,8 @@ export class CabinetScene {
     const gradTex = new THREE.CanvasTexture(gradCanvas);
     gradTex.minFilter = THREE.NearestFilter;
     gradTex.magFilter = THREE.NearestFilter;
+    this.gradTex = gradTex;
+    this.feetMat = new THREE.MeshToonMaterial({ color: 0x222222, gradientMap: gradTex });
 
     this.toonMat = new THREE.MeshToonMaterial({
       color: 0xffffff,
@@ -161,7 +165,22 @@ export class CabinetScene {
         centered: true,
       };
     }
-    // Contour ligt in het (x, diepte)-vlak; extruderen over de dikte (y).
+    if (p.type === "staander") {
+      // Contour: u = hoogte, v = diepte; extruderen over de dikte (world x).
+      const shape = new THREE.Shape();
+      p.contour.forEach(([u, v], i) =>
+        i === 0 ? shape.moveTo(u, v) : shape.lineTo(u, v),
+      );
+      shape.closePath();
+      const geo = new THREE.ExtrudeGeometry(shape, {
+        depth: p.place.w,
+        bevelEnabled: false,
+      });
+      // (u, v, e) → (e, u, v): X = dikte, Y = hoogte, Z = diepte (det +1).
+      geo.applyMatrix4(new THREE.Matrix4().set(0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1));
+      return { geo, centered: false };
+    }
+    // Plank: contour ligt in het (x, diepte)-vlak; extruderen over de dikte (y).
     const shape = new THREE.Shape();
     p.contour.forEach(([x, y], i) =>
       i === 0 ? shape.moveTo(x, -y) : shape.lineTo(x, -y),
@@ -187,6 +206,11 @@ export class CabinetScene {
     }
     this.cellProxies = [];
     this.shelfTargets = [];
+
+    // Kleuren uit de configuratie (toon-materialen worden hergebruikt).
+    this.toonMat.color.set(model.config.color);
+    this.toonMatHdf.color.set(model.config.color).multiplyScalar(0.9);
+    this.feetMat.color.set(model.config.feet.color);
 
     const W = model.snappedWidth;
     const H = model.config.height;
@@ -228,6 +252,32 @@ export class CabinetScene {
       const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), this.edgeMat);
       edges.position.copy(mesh.position);
       group.add(edges);
+    }
+
+    // Pootjes.
+    for (const f of model.feet) {
+      const geo =
+        f.type === "vierkant"
+          ? new THREE.BoxGeometry(f.place.w, f.place.h, f.place.d)
+          : new THREE.CylinderGeometry(
+              f.place.w / 2,
+              f.type === "conisch" ? f.place.w * 0.3 : f.place.w / 2,
+              f.place.h,
+              24,
+            );
+      const mesh = new THREE.Mesh(geo, this.feetMat);
+      mesh.position.set(
+        off.x + f.place.x + f.place.w / 2,
+        off.y + f.place.y + f.place.h / 2,
+        off.z + f.place.z + f.place.d / 2,
+      );
+      mesh.castShadow = true;
+      group.add(mesh);
+      if (f.type === "vierkant") {
+        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), this.edgeMat);
+        edges.position.copy(mesh.position);
+        group.add(edges);
+      }
     }
 
     // Weggelaten planken als doorzichtige ghost (tik = terugzetten).

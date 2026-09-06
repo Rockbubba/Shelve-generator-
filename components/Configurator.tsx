@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import {
+  CABINET_COLORS,
   CabinetConfig,
   DEFAULT_CONFIG,
   DEPTH_OPTIONS,
@@ -254,6 +255,68 @@ export default function Configurator() {
               }
             />
           )}
+          {config.frontProfile.type !== "recht" && (
+            <Toggle
+              label="Profiel spiegelen"
+              hint="links ↔ rechts omdraaien"
+              checked={Boolean(config.frontProfile.mirror)}
+              onChange={(mirror) =>
+                update({ frontProfile: { ...config.frontProfile, mirror } })
+              }
+            />
+          )}
+          <div className="mt-3 rounded-xl bg-neutral-50 p-3">
+            <p className="text-sm font-medium">Achterzijde / muur</p>
+            <p className="mt-1 text-xs text-neutral-500">
+              Staat de muur scheef, geef dan op hoeveel mm de achterkant links en
+              rechts moet worden ingekort; ertussen loopt het verloop lineair.
+            </p>
+            <div>
+              <Stepper
+                label="Inkorting links"
+                value={config.backTaper.left}
+                min={0}
+                max={100}
+                step={5}
+                onChange={(left) => update({ backTaper: { ...config.backTaper, left } })}
+              />
+              <Stepper
+                label="Inkorting rechts"
+                value={config.backTaper.right}
+                min={0}
+                max={100}
+                step={5}
+                onChange={(right) => update({ backTaper: { ...config.backTaper, right } })}
+              />
+            </div>
+            <p className="mt-2 text-xs text-neutral-500">
+              Zit er een bestaande plint op de muur? De staanders krijgen dan
+              achter-onder een inkeping en de onderste planken worden ingekort,
+              zodat de kast strak tegen de muur valt.
+            </p>
+            <div>
+              <Stepper
+                label="Muurplint hoogte"
+                value={config.wallSkirting.height}
+                min={0}
+                max={250}
+                step={10}
+                onChange={(height) =>
+                  update({ wallSkirting: { ...config.wallSkirting, height } })
+                }
+              />
+              <Stepper
+                label="Muurplint diepte"
+                value={config.wallSkirting.depth}
+                min={0}
+                max={40}
+                step={2}
+                onChange={(depth) =>
+                  update({ wallSkirting: { ...config.wallSkirting, depth } })
+                }
+              />
+            </div>
+          </div>
         </div>
       )}
       {step === 1 && (
@@ -457,6 +520,76 @@ export default function Configurator() {
             value={config.base}
             onChange={(base) => update({ base })}
           />
+          {config.base === "pootjes" && (
+            <div className="rounded-xl bg-neutral-50 p-3">
+              <Segmented
+                label="Pootjes"
+                options={[
+                  { value: "rond", label: "Rond" },
+                  { value: "vierkant", label: "Vierkant" },
+                  { value: "conisch", label: "Conisch" },
+                ]}
+                value={config.feet.type}
+                onChange={(type) => update({ feet: { ...config.feet, type } })}
+              />
+              <div>
+                <Stepper
+                  label="Hoogte"
+                  value={config.feet.height}
+                  min={40}
+                  max={250}
+                  step={10}
+                  onChange={(height) => update({ feet: { ...config.feet, height } })}
+                />
+                <Stepper
+                  label="Dikte"
+                  value={config.feet.size}
+                  min={20}
+                  max={100}
+                  step={5}
+                  onChange={(size) => update({ feet: { ...config.feet, size } })}
+                />
+              </div>
+              <label className="mt-1 flex items-center justify-between text-sm">
+                <span className="font-medium">Kleur pootjes</span>
+                <input
+                  type="color"
+                  value={config.feet.color}
+                  onChange={(e) => update({ feet: { ...config.feet, color: e.target.value } })}
+                  className="h-9 w-14 cursor-pointer rounded-lg border border-neutral-300 bg-white"
+                />
+              </label>
+              <p className="mt-1 text-xs text-neutral-500">
+                2 pootjes per staander; de romp wordt met de poothoogte verkort
+                zodat de totale hoogte gelijk blijft.
+              </p>
+            </div>
+          )}
+          <div className="py-2">
+            <span className="text-sm font-medium">Kleur kast</span>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              {CABINET_COLORS.map((c) => (
+                <button
+                  key={c.hex}
+                  type="button"
+                  title={c.naam}
+                  aria-label={c.naam}
+                  className={`btn-touch h-9 w-9 rounded-full border-2 ${
+                    config.color.toLowerCase() === c.hex ? "border-accent" : "border-neutral-200"
+                  }`}
+                  style={{ background: c.hex }}
+                  onClick={() => update({ color: c.hex })}
+                />
+              ))}
+              <input
+                type="color"
+                aria-label="Eigen kleur"
+                value={config.color}
+                onChange={(e) => update({ color: e.target.value })}
+                className="h-9 w-14 cursor-pointer rounded-lg border border-neutral-300 bg-white"
+              />
+            </div>
+          </div>
           <Stepper
             label="Gemeten plaatdikte"
             value={config.thickness}

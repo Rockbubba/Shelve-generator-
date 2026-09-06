@@ -151,12 +151,53 @@ export interface FrontProfile {
   amplitude: number;
   /** Aantal golven over de breedte (alleen bij `golf`). */
   periodes: number;
+  /** Profiel spiegelen over de breedte (bijv. schuin de andere kant op). */
+  mirror?: boolean;
 }
+
+/**
+ * Achterzijde tegen een scheve muur: de achterkant wordt links en rechts
+ * met een eigen maat ingekort, met een lineair verloop ertussen.
+ */
+export interface BackTaper {
+  left: number;
+  right: number;
+}
+
+/** Bestaande plint op de muur waar de kast overheen moet vallen (0 = geen). */
+export interface WallSkirting {
+  height: number;
+  depth: number;
+}
+
+export type FeetType = "rond" | "vierkant" | "conisch";
+export interface FeetConfig {
+  type: FeetType;
+  /** Poothoogte (mm); de romp wordt hiermee verkort zodat de totale hoogte gelijk blijft. */
+  height: number;
+  /** Diameter / zijde (mm). */
+  size: number;
+  /** Renderkleur (hex). */
+  color: string;
+}
+
+/** Renderkleuren voor de kast (hex). */
+export const CABINET_COLORS: { naam: string; hex: string }[] = [
+  { naam: "Wit", hex: "#ffffff" },
+  { naam: "Gebroken wit", hex: "#f3efe6" },
+  { naam: "Zand", hex: "#d9c8a9" },
+  { naam: "Eiken", hex: "#c9a46e" },
+  { naam: "Terracotta", hex: "#c8704f" },
+  { naam: "Olijf", hex: "#7f8c5a" },
+  { naam: "Petrol", hex: "#2f5f6f" },
+  { naam: "Antraciet", hex: "#3a3a3a" },
+];
 /** Minimale resterende kastdiepte op het ondiepste punt van het profiel. */
 export const MIN_PROFILE_DEPTH = 120;
 
 export function frontOffset(profile: FrontProfile, x: number, width: number): number {
-  const u = Math.min(1, Math.max(0, x / width));
+  let u = Math.min(1, Math.max(0, x / width));
+  if (profile.mirror) u = 1 - u;
   const A = profile.amplitude;
   switch (profile.type) {
     case "golf":
@@ -219,6 +260,11 @@ export interface CabinetConfig {
    */
   shelfOffsets: Record<string, number>;
   frontProfile: FrontProfile;
+  backTaper: BackTaper;
+  wallSkirting: WallSkirting;
+  feet: FeetConfig;
+  /** Renderkleur van de kast (hex). */
+  color: string;
 }
 
 export const DEFAULT_CONFIG: CabinetConfig = {
@@ -239,7 +285,11 @@ export const DEFAULT_CONFIG: CabinetConfig = {
   wallMount: true,
   omittedShelves: {},
   shelfOffsets: {},
-  frontProfile: { type: "recht", amplitude: 60, periodes: 2 },
+  frontProfile: { type: "recht", amplitude: 60, periodes: 2, mirror: false },
+  backTaper: { left: 0, right: 0 },
+  wallSkirting: { height: 0, depth: 0 },
+  feet: { type: "rond", height: 100, size: 40, color: "#222222" },
+  color: "#ffffff",
 };
 
 // ---- Diepte-opties (strip-nesting) ------------------------------------------

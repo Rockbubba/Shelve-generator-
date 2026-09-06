@@ -168,6 +168,27 @@ boringen op de juiste plek zitten.
   De DXF-contour van ondersteboven liggende planken wordt over de korte
   zijde gespiegeld.
 
+### Muur, pootjes en kleur
+
+- **Scheve muur (verloop achter)**: geef links en rechts op hoeveel mm de
+  achterkant wordt ingekort; het verloop ertussen is lineair. Staanders
+  krijgen hun eigen achterkant (en dus diepte), planken een schuine
+  achterrand als contour. Alle dieptematen worden intern in één globaal
+  assenstelsel (muurlijn = 0) gerekend en per onderdeel naar het eigen
+  CNC-frame vertaald, zodat dado's en boringen aan beide kanten van een naad
+  exact samenvallen.
+- **Bestaande muurplint**: hoogte en diepte opgeven; staanders krijgen
+  achter-onder een inkeping en planken onder de plinthoogte worden met de
+  plintdiepte ingekort (dado's beginnen daar later). De kast valt zo strak
+  tegen de muur.
+- **Pootjes**: type (rond / vierkant / conisch), hoogte, dikte en kleur;
+  2 per staander, gerenderd in 3D en geteld in de hardware-lijst. De romp
+  wordt met de poothoogte verkort zodat de totale hoogte gelijk blijft.
+- **Profiel spiegelen**: elk voorkantprofiel (incl. schuin) is links↔rechts
+  om te draaien.
+- **Kleur**: acht presets plus vrije kleurkiezer; de rug wordt iets donkerder
+  getint, pootjes hebben een eigen kleur.
+
 ### Datamodel v2-klaar
 
 Elk vak heeft een `fill`-property (`open | rug | deur | lade | diagonaal`),

@@ -563,6 +563,89 @@ describe("voorkantprofiel", () => {
   });
 });
 
+describe("achterzijde: scheve muur en muurplint", () => {
+  it("verloop achter: staanders korter naar één kant, planken met schuine achterrand, naden blijven kloppen", () => {
+    const model = buildCabinetModel({ ...ACCEPT, backTaper: { left: 0, right: 40 } });
+    const s1 = model.panels.find((p) => p.id === "S1")!;
+    const s5 = model.panels.find((p) => p.id === "S5")!;
+    expect(s1.width).toBeCloseTo(ACCEPT.depth, 0);
+    expect(s5.width).toBeCloseTo(ACCEPT.depth - 40, 0);
+    expect(s5.place.z).toBeCloseTo(40, 0);
+    // Plank: schuine achterrand → contour, breedte ≤ D.
+    const plank = model.panels.find((p) => p.type === "plank")!;
+    expect(plank.contour).toBeDefined();
+    expect(plank.width).toBeLessThanOrEqual(ACCEPT.depth + 0.01);
+    // Deuvelgat plank (globaal) valt samen met deuvelgat in de dadobodem van S2.
+    const s2 = model.panels.find((p) => p.id === "S2")!;
+    const s2Holes = s2.ops
+      .filter((o): o is CircleOp => o.kind === "circle" && o.side === "A")
+      .map((o) => Math.round((o.cy + s2.place.z) * 10) / 10);
+    const plankRightHole = plank.ops.filter(
+      (o): o is CircleOp => o.kind === "circle",
+    )[1];
+    const gPlank = Math.round((plankRightHole.cy + plank.place.z) * 10) / 10;
+    expect(s2Holes).toContain(gPlank);
+    expect(nestPanels(model.panels, ACCEPT.depth).errors).toHaveLength(0);
+  });
+
+  it("muurplint: inkeping achter-onder in staanders en ingekorte onderste planken", () => {
+    const model = buildCabinetModel({
+      ...ACCEPT,
+      wallSkirting: { height: 100, depth: 20 },
+    });
+    const s1 = model.panels.find((p) => p.id === "S1")!;
+    expect(s1.contour).toBeDefined();
+    // Inkeping: 100 hoog × 20 diep aan de achterkant (lokaal y = 0).
+    expect(s1.contour!.some(([x, y]) => Math.abs(x - 100) < 0.01 && Math.abs(y - 20) < 0.01)).toBe(true);
+    // Onderste plank (y = 0 < 100) is 20 mm smaller, een hogere plank niet.
+    const bottom = model.panels.find((p) => p.type === "plank" && p.place.y < 1)!;
+    const higher = model.panels.find((p) => p.type === "plank" && p.place.y > 300)!;
+    expect(bottom.width).toBeCloseTo(ACCEPT.depth - 20, 0);
+    expect(bottom.place.z).toBeCloseTo(20, 0);
+    expect(higher.width).toBeCloseTo(ACCEPT.depth, 0);
+    // Dado van de onderste naad begint pas achter de inkeping.
+    const bottomDado = s1.ops.find(
+      (o): o is RectOp => o.kind === "rect" && o.layer === "DADO_7MM" && o.x < 1,
+    )!;
+    expect(bottomDado.y).toBeCloseTo(20, 0);
+  });
+});
+
+describe("pootjes en kleur", () => {
+  it("pootjes: romp verkort, 2 poten per staander, plaatsingen onder de staanders", () => {
+    const model = buildCabinetModel({
+      ...ACCEPT,
+      base: "pootjes",
+      feet: { type: "conisch", height: 120, size: 40, color: "#000000" },
+    });
+    expect(model.bodyBase).toBe(120);
+    expect(model.feet).toHaveLength(2 * (ACCEPT.columns + 1));
+    const s1 = model.panels.find((p) => p.id === "S1")!;
+    expect(s1.place.y).toBe(120);
+    expect(s1.length).toBeCloseTo(ACCEPT.height - 120, 0);
+    for (const f of model.feet) {
+      expect(f.place.h).toBe(120);
+      expect(f.type).toBe("conisch");
+    }
+    expect(model.hardware.some((h) => h.name.startsWith("Pootje") && h.qty === 10)).toBe(true);
+  });
+
+  it("schuin profiel spiegelen draait de richting om", () => {
+    const a = buildCabinetModel({
+      ...ACCEPT,
+      frontProfile: { type: "schuin", amplitude: 60, periodes: 1, mirror: false },
+    });
+    const b = buildCabinetModel({
+      ...ACCEPT,
+      frontProfile: { type: "schuin", amplitude: 60, periodes: 1, mirror: true },
+    });
+    const w = (m: typeof a, id: string) => m.panels.find((p) => p.id === id)!.width;
+    expect(w(a, "S1")).toBeGreaterThan(w(a, "S5"));
+    expect(w(b, "S1")).toBeLessThan(w(b, "S5"));
+    expect(w(a, "S1")).toBeCloseTo(w(b, "S5"), 0);
+  });
+});
+
 describe("stabiliteit en modules", () => {
   it("waarschuwt zonder rug en zonder muurbevestiging", () => {
     const model = buildCabinetModel({
