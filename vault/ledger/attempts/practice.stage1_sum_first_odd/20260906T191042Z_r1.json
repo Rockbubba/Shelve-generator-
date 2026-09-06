@@ -1,0 +1,17 @@
+{
+  "entry": "practice.stage1_sum_first_odd",
+  "round": 1,
+  "at": "2026-09-06T19:10:42+00:00",
+  "proposer": "scripted:crew/proposals/stage1_sum_first_odd.lean",
+  "critic": null,
+  "critic_verdict": null,
+  "critic_text": "",
+  "lean": "built",
+  "axioms": [
+    "Classical.choice",
+    "Quot.sound",
+    "propext"
+  ],
+  "verdict": "verified",
+  "result": "verified"
+}
