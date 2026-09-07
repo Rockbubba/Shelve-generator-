@@ -243,7 +243,12 @@ boringen op de juiste plek zitten.
   onderdelen mogen gedraaid genest worden.
 - **Plint**: 80 mm hoog tussen de buitenste staanders; standaard 40 mm
   teruggelegd t.o.v. het ondiepste punt van de voorkant, maar ook vlak met
-  de voorkant of op een eigen maat (0–150 mm) te zetten.
+  de voorkant of op een eigen maat (0–150 mm) te zetten. De plint loopt in
+  één stuk door, dus elke binnenstaander krijgt voor-onder een inkeping tot
+  het achtervlak van de plint (onderdeel van de buitencontour, dus geen
+  aparte bewerking). De buitenste staanders houden hun volle diepte en de
+  plint stopt ernaast. Bij een grote terugligging in een ondiepe kast
+  waarschuwt de generator als er te weinig staandervoet overblijft.
 - **Bestaande muurplint**: hoogte en diepte opgeven; staanders krijgen
   achter-onder een inkeping en planken onder de plinthoogte worden met de
   plintdiepte ingekort (dado's beginnen daar later). De kast valt zo strak

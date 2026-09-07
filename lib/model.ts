@@ -506,6 +506,16 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
     profiled ? round1(frontAt(staanderX(i) + t / 2)) : D;
   const staanderDepth = (i: number) => round1(staanderFront(i) - staanderBack(i));
 
+  // Plint: doorlopende band tussen de buitenste staanders, achter het
+  // ondiepste punt van de voorkant. De binnenstaanders krijgen voor-onder
+  // een inkeping zodat de plint er niet doorheen loopt.
+  const hasPlinth = config.base === "plint";
+  const plinthSetback = Math.max(0, config.plinthSetback ?? PLINTH_SETBACK);
+  let minFrontZ = D;
+  for (let i = 0; i <= columns; i++) minFrontZ = Math.min(minFrontZ, staanderFront(i));
+  /** Achtervlak van de plint in globale diepte (z). */
+  const plinthBackZ = round1(minFrontZ - plinthSetback - t);
+
   let minDepth = Infinity;
   for (let i = 0; i <= columns; i++) minDepth = Math.min(minDepth, staanderDepth(i));
   if (minDepth - skirtDepth < MIN_PROFILE_DEPTH) {
@@ -534,6 +544,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
   let doorNo = 0;
   let hingeCount = 0;
   let wideDoorWarned = false;
+  let plinthFootWarned = false;
   /** Totale LED-striplengte (mm) over alle vakken. */
   let ledStripMm = 0;
   let dowelJoints = 0;
@@ -809,18 +820,38 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
       const machineSide: Side = ops.some((o) => o.side === "A") ? "A" : "B";
       ops.push(engrave(id, Hm, Di, machineSide));
 
-      // Muurplint: inkeping achter-onder (alleen onderste module).
+      // Inkepingen onderaan: muurplint achter-onder, kastplint voor-onder.
+      // De plint loopt door tussen de buitenste staanders, dus alleen de
+      // binnenstaanders worden uitgespaard; de buitenste staan er met hun
+      // volle diepte naast.
+      const skirtNotch = m === 0 && skirtDepth > 0;
+      const plinthNotch = hasPlinth && m === 0 && i > 0 && i < columns;
+      const plinthNotchH = Math.min(PLINTH_HEIGHT, Hm - t);
+      const vPlinthBack = round1(Math.max(0, plinthBackZ - bi));
       let contour: [number, number][] | undefined;
-      if (m === 0 && skirtDepth > 0) {
+      if (skirtNotch || plinthNotch) {
         const nh = Math.min(skirtNotchH, Hm - t);
-        contour = [
-          [0, skirtDepth],
-          [nh, skirtDepth],
-          [nh, 0],
-          [Hm, 0],
-          [Hm, Di],
-          [0, Di],
-        ];
+        const pts: [number, number][] = [];
+        // Achterzijde, van onder naar boven.
+        if (skirtNotch) pts.push([0, skirtDepth], [nh, skirtDepth], [nh, 0]);
+        else pts.push([0, 0]);
+        pts.push([Hm, 0], [Hm, Di]);
+        // Voorzijde, van boven naar onder.
+        if (plinthNotch) {
+          pts.push([plinthNotchH, Di], [plinthNotchH, vPlinthBack], [0, vPlinthBack]);
+        } else {
+          pts.push([0, Di]);
+        }
+        contour = pts;
+      }
+      if (plinthNotch && !plinthFootWarned) {
+        const foot = round1(vPlinthBack - (skirtNotch ? skirtDepth : 0));
+        if (foot < 100) {
+          plinthFootWarned = true;
+          warnings.push(
+            `Onder de plintinkeping blijft nog maar ${foot} mm staanderdiepte over — verklein de terugligging van de plint of maak de kast dieper.`,
+          );
+        }
       }
 
       panels.push({
@@ -1319,12 +1350,8 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
   }
 
   // ---- Plint ----------------------------------------------------------------
-  if (config.base === "plint") {
+  if (hasPlinth) {
     const plintLen = round1(W - 2 * t - 2);
-    // Plint achter (of, bij 0, vlak met) het ondiepste punt van de voorkant.
-    const setback = Math.max(0, config.plinthSetback ?? PLINTH_SETBACK);
-    let minFront = D;
-    for (let i = 0; i <= columns; i++) minFront = Math.min(minFront, staanderFront(i));
     panels.push({
       id: "PL1",
       type: "plint",
@@ -1338,7 +1365,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
       place: {
         x: t + 1,
         y: 0,
-        z: minFront - setback - t,
+        z: plinthBackZ,
         w: plintLen,
         h: PLINTH_HEIGHT,
         d: t,
@@ -1424,6 +1451,13 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
       name: "LED-kabel 2-aderig (verticaal per kolom + verzamelstreng onderin)",
       qty: Math.ceil((config.height * columns + W) / 1000) + 2,
       unit: "m",
+    });
+  }
+  if (hasPlinth) {
+    hardware.push({
+      name: "Spaanplaatschroef 4 × 40 mm (plint in de staanderinkepingen)",
+      qty: 2 * columns + 2,
+      unit: "stuks",
     });
   }
   hardware.push({ name: "L-beugel muurbevestiging", qty: 2, unit: "stuks" });

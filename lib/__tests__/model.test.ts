@@ -1178,3 +1178,86 @@ describe("LED-bekabeling: verticaal per kolom én horizontaal door de staanders"
     expect(collectors).toHaveLength(3);
   });
 });
+
+describe("plint: inkeping in de binnenstaanders", () => {
+  /** Ligt (u, v) binnen de contour van het paneel? (even-odd raycast) */
+  const inside = (contour: [number, number][], u: number, v: number) => {
+    let hit = false;
+    for (let i = 0, j = contour.length - 1; i < contour.length; j = i++) {
+      const [ui, vi] = contour[i];
+      const [uj, vj] = contour[j];
+      if (vi > v !== vj > v && u < ((uj - ui) * (v - vi)) / (vj - vi) + ui) hit = !hit;
+    }
+    return hit;
+  };
+
+  it("spaart de plint uit in de binnenstaanders en laat de buitenste heel", () => {
+    const model = buildCabinetModel({ ...ACCEPT, base: "plint" });
+    const plint = model.panels.find((p) => p.type === "plint")!;
+    const plintBack = plint.place.z;
+    const plintFront = plint.place.z + plint.place.d;
+
+    for (const id of ["S2", "S3", "S4"]) {
+      const s = model.panels.find((p) => p.id === id)!;
+      expect(s.contour, `${id} moet een inkeping hebben`).toBeDefined();
+      // Waar de plint zit is geen staandermateriaal meer.
+      const v = plintBack - s.place.z + plint.place.d / 2; // hart van de plint, lokaal
+      expect(inside(s.contour!, 40, v), `${id} op plinthoogte`).toBe(false);
+      // Boven de plint staat de staander weer vol.
+      expect(inside(s.contour!, 200, v), `${id} boven de plint`).toBe(true);
+      // Achter de plint blijft de voet staan.
+      expect(inside(s.contour!, 40, 100), `${id} voet achter de plint`).toBe(true);
+    }
+    // Buitenstaanders houden hun volle diepte; de plint stopt ernaast.
+    for (const id of ["S1", "S5"]) {
+      expect(model.panels.find((p) => p.id === id)!.contour).toBeUndefined();
+    }
+    expect(plint.place.x).toBeGreaterThan(ACCEPT.thickness);
+    expect(plint.place.x + plint.place.w).toBeLessThan(model.snappedWidth - ACCEPT.thickness);
+    // De inkeping loopt tot de voorkant en tot de plinthoogte.
+    const s3 = model.panels.find((p) => p.id === "S3")!;
+    expect(Math.max(...s3.contour!.map(([u]) => u))).toBeCloseTo(ACCEPT.height, 1);
+    expect(s3.contour!.some(([u, v]) => u === 80 && v === s3.width)).toBe(true);
+    expect(plintFront).toBeCloseTo(ACCEPT.depth - 40, 1);
+    // Schroeven voor de plint staan in de hardwarelijst.
+    expect(model.hardware.some((h) => h.name.includes("plint"))).toBe(true);
+  });
+
+  it("volgt de terugligging en combineert met de muurplint-inkeping", () => {
+    for (const setback of [0, 40, 120]) {
+      const model = buildCabinetModel({
+        ...ACCEPT,
+        base: "plint",
+        plinthSetback: setback,
+        wallSkirting: { height: 120, depth: 20 },
+      });
+      const plint = model.panels.find((p) => p.type === "plint")!;
+      const s3 = model.panels.find((p) => p.id === "S3")!;
+      const c = s3.contour!;
+      // Voor-onder uitgespaard tot precies het achtervlak van de plint.
+      const notchV = Math.min(...c.filter(([u]) => u === 80).map(([, v]) => v));
+      expect(notchV).toBeCloseTo(plint.place.z - s3.place.z, 1);
+      // Achter-onder blijft de muurplint-inkeping bestaan.
+      expect(c.some(([u, v]) => u === 0 && v === 20)).toBe(true);
+      expect(Math.min(...c.map(([, v]) => v))).toBe(0);
+    }
+  });
+
+  it("waarschuwt als er te weinig staandervoet overblijft", () => {
+    const ondiep = buildCabinetModel({
+      ...ACCEPT,
+      depth: 200,
+      base: "plint",
+      plinthSetback: 120,
+    });
+    expect(ondiep.warnings.some((w) => w.includes("staanderdiepte"))).toBe(true);
+    expect(buildCabinetModel({ ...ACCEPT, base: "plint" }).warnings.some((w) => w.includes("staanderdiepte"))).toBe(false);
+  });
+
+  it("zonder plint blijven de staanders onaangetast", () => {
+    for (const base of ["geen", "pootjes"] as const) {
+      const model = buildCabinetModel({ ...ACCEPT, base });
+      expect(model.panels.filter((p) => p.type === "staander").every((p) => !p.contour)).toBe(true);
+    }
+  });
+});
