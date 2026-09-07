@@ -971,8 +971,10 @@ describe("betonplex, LED-verlichting en dichtvak", () => {
         const grooves = p.ops.filter((o) => o.layer === "LED_GROEF_7MM");
         const isTop = p.place.y + p.place.h >= ACCEPT.height - 0.01;
         const isBottom = p.place.y <= 0.01;
-        // Doorvoer in alle planken behalve de bovenste; groef boven elk vak (niet in de onderste plank).
-        expect(holes.length, `${p.id} doorvoer`).toBe(isTop ? 0 : 1);
+        // Verticale doorvoer alleen in de bedrade kolom (hier: rechts).
+        const maxX = Math.max(...planken.map((q) => q.place.x));
+        const isDriverCol = Math.abs(p.place.x - maxX) < 0.01;
+        expect(holes.length, `${p.id} doorvoer`).toBe(isDriverCol && !isTop ? 1 : 0);
         expect(grooves.length, `${p.id} groef`).toBe(isBottom ? 0 : 1);
         for (const h of holes) {
           expect(h.through).toBe(true);
@@ -1080,102 +1082,133 @@ describe("betonplex, LED-verlichting en dichtvak", () => {
   });
 });
 
-describe("LED-bekabeling: verticaal per kolom én horizontaal door de staanders", () => {
+describe("LED-bekabeling: doorlussen per rij, één bedrade zijde", () => {
   const LED: Partial<CabinetConfig> = { led: { enabled: true, side: "links", inbouw: true } };
+  const holesOf = (model: ReturnType<typeof buildCabinetModel>, id: string) =>
+    model.panels
+      .find((p) => p.id === id)!
+      .ops.filter((o): o is CircleOp => o.kind === "circle" && o.layer === "BOOR_10MM");
 
-  it("geeft alleen de binnenstaanders een horizontale verzameldoorvoer", () => {
+  it("lust elke rij door de binnenstaanders door en laat de buitenste dicht", () => {
     const model = buildCabinetModel({ ...ACCEPT, ...LED });
-    const holesOf = (id: string) =>
-      model.panels
-        .find((p) => p.id === id)!
-        .ops.filter((o): o is CircleOp => o.kind === "circle" && o.layer === "BOOR_10MM");
-    // 4 kolommen → S1 en S5 zijn buitenstaanders, S2/S3/S4 binnenstaanders.
-    expect(holesOf("S1")).toHaveLength(0);
-    expect(holesOf("S5")).toHaveLength(0);
+    // 4 kolommen × 5 rijen: elke binnenstaander krijgt één doorvoer per rij.
+    expect(holesOf(model, "S1")).toHaveLength(0);
+    expect(holesOf(model, "S5")).toHaveLength(0);
+    const cellTops = model.cells
+      .filter((c) => c.col === 1)
+      .map((c) => c.y + c.h)
+      .sort((a, b) => a - b);
     for (const id of ["S2", "S3", "S4"]) {
-      const holes = holesOf(id);
-      expect(holes, id).toHaveLength(1);
-      expect(holes[0].diameter).toBe(10);
-      expect(holes[0].through).toBe(true);
-      // Onderin, boven de onderste plank en ruim onder de plank erboven.
-      expect(holes[0].cx).toBeGreaterThan(18);
-      expect(holes[0].cx).toBeLessThan(120);
-      // Achterin, op dezelfde diepte als de doorvoeren in de planken.
-      expect(holes[0].cy).toBeCloseTo(28, 1);
+      const holes = holesOf(model, id);
+      expect(holes, id).toHaveLength(ACCEPT.rows);
+      expect(holes.every((h) => h.diameter === 10 && h.through)).toBe(true);
+      // Elke doorvoer zit 40 mm onder de bovenkant van een vak, achterin.
+      const hoogtes = holes.map((h) => h.cx).sort((a, b) => a - b);
+      hoogtes.forEach((h, k) => expect(h).toBeCloseTo(cellTops[k] - 40, 1));
+      expect(holes.every((h) => Math.abs(h.cy - 28) < 0.01)).toBe(true);
     }
-    // Zonder LED geen enkele doorvoer.
-    const zonder = buildCabinetModel(ACCEPT);
-    expect(zonder.panels.some((p) => p.ops.some((o) => o.layer === "BOOR_10MM"))).toBe(false);
+    expect(buildCabinetModel(ACCEPT).panels.some((p) => p.ops.some((o) => o.layer === "BOOR_10MM"))).toBe(false);
   });
 
-  it("houdt de verzameldoorvoer vrij van dado's, Cabineo's en de rugsponning", () => {
+  it("bedraadt maar één kolom verticaal, aan de gekozen zijde", () => {
+    for (const side of ["links", "rechts"] as const) {
+      const model = buildCabinetModel({ ...ACCEPT, led: { enabled: true, side, inbouw: true } });
+      const planken = model.panels.filter((p) => p.type === "plank");
+      const xs = [...new Set(planken.map((p) => p.place.x))].sort((a, b) => a - b);
+      const driverX = side === "links" ? xs[0] : xs[xs.length - 1];
+      for (const p of planken) {
+        const holes = p.ops.filter((o) => o.layer === "BOOR_10MM");
+        const isDriver = Math.abs(p.place.x - driverX) < 0.01;
+        const isTop = p.place.y + p.place.h >= ACCEPT.height - 0.01;
+        expect(holes.length, `${side}: ${p.id}`).toBe(isDriver && !isTop ? 1 : 0);
+      }
+      // De verticale streng zit aan de buitenzijde van die kolom.
+      const driverPlank = planken.find(
+        (p) => Math.abs(p.place.x - driverX) < 0.01 && p.place.y > 0,
+      )!;
+      const hole = driverPlank.ops.find((o): o is CircleOp => o.kind === "circle" && o.layer === "BOOR_10MM")!;
+      if (side === "links") expect(hole.cx).toBeLessThan(driverPlank.length / 2);
+      else expect(hole.cx).toBeGreaterThan(driverPlank.length / 2);
+    }
+  });
+
+  it("houdt de doorvoeren vrij van dado's, Cabineo's en de rugsponning", () => {
     for (const joinery of ["dado", "cabineo"] as const) {
       for (const rugMount of ["geschroefd", "sponning"] as const) {
         const model = buildCabinetModel({ ...ACCEPT, ...LED, joinery, rugMount });
         const s = model.panels.find((p) => p.id === "S3")!;
-        const hole = s.ops.find(
-          (o): o is CircleOp => o.kind === "circle" && o.layer === "BOOR_10MM",
-        )!;
-        for (const op of s.ops) {
-          if (op === hole) continue;
-          if (op.kind === "circle") {
-            const d = Math.hypot(op.cx - hole.cx, op.cy - hole.cy);
-            expect(d, `${joinery}/${rugMount}: ${op.layer}`).toBeGreaterThan(5 + op.diameter / 2);
-          }
-          if (op.kind === "rect") {
-            // Afstand van het hart tot de rechthoek moet groter zijn dan de boorradius.
-            const dx = Math.max(op.x - hole.cx, hole.cx - (op.x + op.w), 0);
-            const dy = Math.max(op.y - hole.cy, hole.cy - (op.y + op.h), 0);
-            expect(Math.hypot(dx, dy), `${joinery}/${rugMount}: ${op.layer}`).toBeGreaterThan(5);
+        for (const hole of holesOf(model, "S3")) {
+          for (const op of s.ops) {
+            if (op === hole) continue;
+            if (op.kind === "circle") {
+              const d = Math.hypot(op.cx - hole.cx, op.cy - hole.cy);
+              expect(d, `${joinery}/${rugMount}: ${op.layer}`).toBeGreaterThan(5 + op.diameter / 2);
+            }
+            if (op.kind === "rect") {
+              const dx = Math.max(op.x - hole.cx, hole.cx - (op.x + op.w), 0);
+              const dy = Math.max(op.y - hole.cy, hole.cy - (op.y + op.h), 0);
+              expect(Math.hypot(dx, dy), `${joinery}/${rugMount}: ${op.layer}`).toBeGreaterThan(5);
+            }
           }
         }
       }
     }
   });
 
-  it("levert een kabelroute voor de 3D: verticaal per kolom, horizontaal verzamelend, dan omlaag", () => {
-    const model = buildCabinetModel({ ...ACCEPT, ...LED, base: "plint" });
-    // 4 verticale strengen + 1 horizontale verzamelstreng + 1 afdaling.
-    expect(model.ledRoutes).toHaveLength(6);
-    const verticaal = model.ledRoutes.filter(
-      (r) => r.length === 2 && r[0][0] === r[1][0] && r[0][1] !== r[1][1],
-    );
-    expect(verticaal).toHaveLength(5); // 4 kolommen + de afdaling naar de driver
-    const horizontaal = model.ledRoutes.find((r) => r.length === 4)!;
-    expect(horizontaal).toBeDefined();
-    // Verzamelstreng op één hoogte, oplopend in x over alle kolommen.
-    expect(new Set(horizontaal.map((p) => p[1])).size).toBe(1);
-    for (let i = 1; i < horizontaal.length; i++) {
-      expect(horizontaal[i][0]).toBeGreaterThan(horizontaal[i - 1][0]);
+  it("volgt een afwijkende indeling: samengevoegde vakken krijgen hun eigen doorvoer", () => {
+    const model = buildCabinetModel({
+      ...ACCEPT,
+      ...LED,
+      omittedShelves: { "0:2:2": true, "0:2:3": true },
+    });
+    // Kolom 2 heeft nu 3 vakken i.p.v. 5; de staander ernaartoe (S3) volgt die.
+    expect(model.cells.filter((c) => c.col === 2)).toHaveLength(3);
+    expect(holesOf(model, "S3")).toHaveLength(3);
+    // De staander verder van de driver (S4) volgt kolom 3, die nog 5 vakken heeft.
+    expect(holesOf(model, "S4")).toHaveLength(ACCEPT.rows);
+    // Elke doorvoer ligt binnen het vak waar hij bij hoort.
+    for (const h of holesOf(model, "S3")) {
+      const past = model.cells.some(
+        (c) => c.col === 2 && h.cx > c.y + 20 && h.cx < c.y + c.h - 20,
+      );
+      expect(past, `doorvoer op ${h.cx}`).toBe(true);
     }
-    // De verzamelstreng ligt op de hoogte van de doorvoer in de binnenstaander.
-    const s3 = model.panels.find((p) => p.id === "S3")!;
-    const hole = s3.ops.find((o): o is CircleOp => o.kind === "circle" && o.layer === "BOOR_10MM")!;
-    expect(horizontaal[0][1]).toBeCloseTo(model.bodyBase + hole.cx, 1);
-    // Zonder LED geen route.
-    expect(buildCabinetModel(ACCEPT).ledRoutes).toHaveLength(0);
   });
 
   it("laat de bekabeling van een tweede module omlaag via de bovenste plank", () => {
     const model = buildCabinetModel({ ...ACCEPT, ...LED, height: 3000 });
     expect(model.moduleCount).toBe(2);
-    const topOf = (m: number) =>
-      Math.max(
-        ...model.panels.filter((p) => p.type === "plank" && p.module === m).map((p) => p.place.y),
-      );
-    const heeftDoorvoer = (p: (typeof model.panels)[number]) =>
-      p.ops.some((o) => o.layer === "BOOR_10MM");
     const planken = model.panels.filter((p) => p.type === "plank");
+    const driverX = Math.min(...planken.map((p) => p.place.x));
     for (const p of planken) {
-      const isTopVanKast = p.module === 1 && p.place.y >= topOf(1) - 0.01;
-      expect(heeftDoorvoer(p), `${p.id} (module ${p.module})`).toBe(!isTopVanKast);
+      const heeft = p.ops.some((o) => o.layer === "BOOR_10MM");
+      const isDriver = Math.abs(p.place.x - driverX) < 0.01;
+      const isTopVanKast = p.place.y + p.place.h >= 3000 - 0.01;
+      expect(heeft, `${p.id} (module ${p.module})`).toBe(isDriver && !isTopVanKast);
     }
-    // De verzameldoorvoer zit alleen in de onderste module.
-    const collectors = model.panels.filter(
-      (p) => p.type === "staander" && p.ops.some((o) => o.layer === "BOOR_10MM"),
-    );
-    expect(collectors.every((p) => p.module === 0)).toBe(true);
-    expect(collectors).toHaveLength(3);
+    // De rijdoorvoeren zitten in beide modules.
+    const s3 = model.panels.filter((p) => p.id.startsWith("S") && p.staanderKey === "col:2");
+    expect(s3).toHaveLength(2);
+    expect(s3.every((p) => p.ops.some((o) => o.layer === "BOOR_10MM"))).toBe(true);
+  });
+
+  it("levert een kabelroute voor de 3D: een lijn per rij plus één verticale streng", () => {
+    const model = buildCabinetModel({ ...ACCEPT, ...LED, base: "plint" });
+    // 20 vakken → 20 horizontale leads, plus één verticale streng.
+    expect(model.ledRoutes).toHaveLength(model.cells.length + 1);
+    const horizontaal = model.ledRoutes.filter((r) => r[0][1] === r[1][1]);
+    expect(horizontaal).toHaveLength(model.cells.length);
+    // De leads van één rij liggen op dezelfde hoogte en sluiten op elkaar aan.
+    const rij = horizontaal
+      .filter((r) => Math.abs(r[0][1] - horizontaal[0][0][1]) < 0.01)
+      .map((r) => [Math.min(r[0][0], r[1][0]), Math.max(r[0][0], r[1][0])] as const)
+      .sort((a, b) => a[0] - b[0]);
+    expect(rij).toHaveLength(ACCEPT.columns);
+    for (let i = 1; i < rij.length; i++) expect(rij[i][0]).toBeCloseTo(rij[i - 1][1], 1);
+    // De verticale streng zakt tot onder de onderste plank (naar de plint).
+    const verticaal = model.ledRoutes.find((r) => r[0][0] === r[1][0] && r[0][1] !== r[1][1])!;
+    expect(Math.min(verticaal[0][1], verticaal[1][1])).toBeLessThan(80);
+    expect(buildCabinetModel(ACCEPT).ledRoutes).toHaveLength(0);
   });
 });
 

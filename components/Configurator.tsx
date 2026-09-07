@@ -829,10 +829,10 @@ export default function Configurator() {
             {config.led.enabled && (
               <>
                 <Segmented
-                  label="Kabeldoorvoer"
+                  label="Bedrade zijde"
                   options={[
-                    { value: "links", label: "Links", sub: "achter in elk vak" },
-                    { value: "rechts", label: "Rechts", sub: "achter in elk vak" },
+                    { value: "links", label: "Links", sub: "driver in de plint" },
+                    { value: "rechts", label: "Rechts", sub: "driver in de plint" },
                   ]}
                   value={config.led.side}
                   onChange={(side) => update({ led: { ...config.led, side } })}
@@ -847,10 +847,10 @@ export default function Configurator() {
                   onChange={(v) => update({ led: { ...config.led, inbouw: v === "inbouw" } })}
                 />
                 <p className="mt-1 text-xs text-neutral-500">
-                  Verticaal: Ø10-doorvoer achter-{config.led.side} in elke plank, zodat de
-                  bekabeling per kolom omlaag loopt. Horizontaal: onderin één Ø10-doorvoer
-                  door elke binnenstaander, waar alle kolommen samenkomen in één streng naar
-                  de 24 V-driver in de plint. De route is in de 3D-weergave als lijn te zien.
+                  Elke rij wordt door de staanders doorgelust, zodat de strips als één lijn
+                  over de hele kastbreedte lopen (Ø10-doorvoer per vak, achterin). Alleen de
+                  kolom aan de gekozen zijde is verticaal bedraad en zakt naar de 24 V-driver
+                  in de plint. De route is in de 3D-weergave als lijn te zien.
                 </p>
               </>
             )}

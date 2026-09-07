@@ -88,7 +88,15 @@ export class CabinetScene {
     // Weggelaten planken: doorzichtig, aantikken zet ze terug.
     this.ledMat = new THREE.MeshBasicMaterial({ color: 0xfff3c4 });
     // Kabelroute van de LED-verlichting: donkere lijn door de doorvoeren.
-    this.cableMat = new THREE.MeshBasicMaterial({ color: 0xb45309 });
+    // De kabelroute is een schematische overlay: altijd zichtbaar, ook waar
+    // planken en staanders ervoor zitten, zodat de bedrading in één oogopslag
+    // te volgen is.
+    this.cableMat = new THREE.MeshBasicMaterial({
+      color: 0xb45309,
+      depthTest: false,
+      transparent: true,
+      opacity: 0.9,
+    });
     this.ledGlowMat = new THREE.MeshBasicMaterial({
       color: 0xffe9a8,
       transparent: true,
@@ -358,19 +366,29 @@ export class CabinetScene {
       for (let i = 1; i < route.length; i++) {
         const a = new THREE.Vector3(off.x + route[i - 1][0], off.y + route[i - 1][1], off.z + route[i - 1][2]);
         const b = new THREE.Vector3(off.x + route[i][0], off.y + route[i][1], off.z + route[i][2]);
-        const len = a.distanceTo(b);
-        if (len < 1) continue;
-        // Cilinder langs het segment, met de kastmaat meeschalend zodat de
-        // route ook bij een grote kast zichtbaar blijft (schematisch, niet
-        // op ware kabeldikte).
-        const r = Math.max(4, Math.max(W, H, D) / 220);
-        const geo = new THREE.CylinderGeometry(r, r, len, 8);
-        const mesh = new THREE.Mesh(geo, this.cableMat);
-        mesh.position.copy(a).add(b).multiplyScalar(0.5);
-        mesh.quaternion.setFromUnitVectors(
-          new THREE.Vector3(0, 1, 0),
-          b.clone().sub(a).normalize(),
+        if (a.distanceTo(b) < 1) continue;
+        // De route is asgericht, dus een balk per segment volstaat. De dikte
+        // schaalt met de kastmaat zodat de streng ook bij een grote kast
+        // zichtbaar blijft (schematisch, niet op ware kabeldikte).
+        const r = Math.max(6, Math.max(W, H, D) / 220);
+        const min = new THREE.Vector3(
+          Math.min(a.x, b.x),
+          Math.min(a.y, b.y),
+          Math.min(a.z, b.z),
         );
+        const max = new THREE.Vector3(
+          Math.max(a.x, b.x),
+          Math.max(a.y, b.y),
+          Math.max(a.z, b.z),
+        );
+        const geo = new THREE.BoxGeometry(
+          Math.max(max.x - min.x, r),
+          Math.max(max.y - min.y, r),
+          Math.max(max.z - min.z, r),
+        );
+        const mesh = new THREE.Mesh(geo, this.cableMat);
+        mesh.position.copy(min).add(max).multiplyScalar(0.5);
+        mesh.renderOrder = 999;
         group.add(mesh);
       }
     }

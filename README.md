@@ -228,17 +228,20 @@ boringen op de juiste plek zitten.
   de onderzijde van de plank erboven. *Inbouw* freest een groef 17 × 7 mm
   (laag `LED_GROEF_7MM`, hart op 28 mm van de achterrand, 40 mm vrij van de
   plankuiteinden zodat Cabineo-pockets en deuvels vrij blijven); *opbouw*
-  laat de groef weg. De bekabeling loopt in twee richtingen, beide als
-  Ø10-doorvoer (`BOOR_10MM_DOOR`), 28 mm uit de achterrand:
-  *verticaal* in elke plank behalve de allerbovenste van de kast, 45 mm uit
-  het staandervlak aan de gekozen zijde (links/rechts), zodat elke kolom een
-  eigen streng omlaag heeft; en *horizontaal* onderin, één doorvoer door elke
-  binnenstaander op 40 mm boven de onderste plank, waar alle kolomstrengen
-  samenkomen in één streng die aan de gekozen zijde door de onderste plank
-  naar de driver in de plint zakt. Bij een kast van meer dan één module krijgt
-  de bovenste plank van een onderliggende module ook een doorvoer. De route
-  zit als polylijn in `model.ledRoutes` en wordt in de 3D-weergave getekend;
-  de BOM telt striplengte, profiel, driver(s) en kabel.
+  laat de groef weg. De bekabeling volgt de lichtlijn: elke rij wordt
+  *horizontaal* doorgelust met een Ø10-doorvoer (`BOOR_10MM_DOOR`) door elke
+  binnenstaander, 40 mm onder de bovenkant van het vak en 28 mm uit de
+  achterrand, zodat de strips als één lijn over de hele kastbreedte lopen.
+  Alleen de kolom aan de gekozen zijde (links/rechts) is *verticaal* bedraad:
+  daar zit in elke plank behalve de allerbovenste een doorvoer, 45 mm uit het
+  staandervlak, die naar de driver in de plint zakt. Bij een kast van meer dan
+  één module krijgt de bovenste plank van een onderliggende module ook een
+  doorvoer. Wijkt de indeling van twee naastliggende kolommen zo sterk af dat
+  er minder dan 60 mm hoogteoverlap is, dan wordt die kolom in plaats daarvan
+  verticaal gevoed. De route zit als polylijn in `model.ledRoutes` en wordt in
+  de 3D-weergave als doorzichtige overlay getekend (altijd zichtbaar, ook
+  achter planken en staanders, want het is een schema); de BOM telt striplengte, profiel, driver(s) en de
+  werkelijke kabellengte uit die route.
 - **Betonplex** als materiaal (12/15/18/21 mm), filmbekleed dus nerfloos:
   onderdelen mogen gedraaid genest worden.
 - **Plint**: 80 mm hoog tussen de buitenste staanders; standaard 40 mm
