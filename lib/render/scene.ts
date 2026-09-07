@@ -18,6 +18,7 @@ export class CabinetScene {
   private shelfTargets: THREE.Mesh[] = [];
   private ghostMat: THREE.MeshBasicMaterial;
   private ledMat: THREE.MeshBasicMaterial;
+  private cableMat: THREE.MeshBasicMaterial;
   private ledGlowMat: THREE.MeshBasicMaterial;
   private toonMatSelected: THREE.MeshToonMaterial;
   private feetMat: THREE.MeshToonMaterial;
@@ -86,6 +87,8 @@ export class CabinetScene {
     });
     // Weggelaten planken: doorzichtig, aantikken zet ze terug.
     this.ledMat = new THREE.MeshBasicMaterial({ color: 0xfff3c4 });
+    // Kabelroute van de LED-verlichting: donkere lijn door de doorvoeren.
+    this.cableMat = new THREE.MeshBasicMaterial({ color: 0xb45309 });
     this.ledGlowMat = new THREE.MeshBasicMaterial({
       color: 0xffe9a8,
       transparent: true,
@@ -347,6 +350,29 @@ export class CabinetScene {
         off.z + cell.z + 6,
       );
       group.add(glow);
+    }
+
+    // Kabelroute: verticaal per kolom door de plankdoorvoeren, horizontaal
+    // door de binnenstaanders en omlaag naar de driver in de plint.
+    for (const route of model.ledRoutes) {
+      for (let i = 1; i < route.length; i++) {
+        const a = new THREE.Vector3(off.x + route[i - 1][0], off.y + route[i - 1][1], off.z + route[i - 1][2]);
+        const b = new THREE.Vector3(off.x + route[i][0], off.y + route[i][1], off.z + route[i][2]);
+        const len = a.distanceTo(b);
+        if (len < 1) continue;
+        // Cilinder langs het segment, met de kastmaat meeschalend zodat de
+        // route ook bij een grote kast zichtbaar blijft (schematisch, niet
+        // op ware kabeldikte).
+        const r = Math.max(4, Math.max(W, H, D) / 220);
+        const geo = new THREE.CylinderGeometry(r, r, len, 8);
+        const mesh = new THREE.Mesh(geo, this.cableMat);
+        mesh.position.copy(a).add(b).multiplyScalar(0.5);
+        mesh.quaternion.setFromUnitVectors(
+          new THREE.Vector3(0, 1, 0),
+          b.clone().sub(a).normalize(),
+        );
+        group.add(mesh);
+      }
     }
 
     // Onzichtbare vak-volumes voor rug-toggles: alleen de achterste helft

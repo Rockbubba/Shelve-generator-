@@ -56,6 +56,7 @@ import {
   LED_CABLE_HOLE_DIAMETER,
   LED_CABLE_BACK_OFFSET,
   LED_CABLE_SIDE_OFFSET,
+  LED_CABLE_COLLECTOR_HEIGHT,
   LED_WATT_PER_M,
   LED_DRIVER_WATT,
   DOOR_GAP,
@@ -243,6 +244,12 @@ export interface CabinetModel {
   feet: FootPlacement[];
   /** Hoogte waarop de romp begint (poothoogte, anders 0). */
   bodyBase: number;
+  /**
+   * Kabelroute van de LED-verlichting als polylijnen in kastcoördinaten:
+   * per kolom een verticale streng door de plankdoorvoeren, plus de
+   * horizontale verzamelstreng door de binnenstaanders naar de driver.
+   */
+  ledRoutes: [number, number, number][][];
   hardware: HardwareItem[];
   warnings: string[];
 }
@@ -516,6 +523,8 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
 
   const panels: Panel[] = [];
   const cells: CellInfo[] = [];
+  /** Hoogte (kastcoördinaten) van de horizontale LED-verzamelstreng. */
+  let ledCollectorY: number | null = null;
   const ghostShelves: { key: string; place: Placement3D }[] = [];
   const notchLen = DADO_FRONT_STOP + TOOL_RADIUS; // hoekinkeping plank
 
@@ -773,6 +782,26 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
             }
           }
         }
+      }
+
+      // LED: horizontale verzameldoorvoer door de binnenstaanders, onderin de
+      // onderste module. De verticale runs van alle kolommen komen hier samen
+      // en lopen als één streng door naar de zijde waar de driver zit.
+      if (config.led.enabled && i > 0 && i < columns && m === 0) {
+        const shelfTop = Math.max(levelYFor(i - 1, 0), levelYFor(i, 0)) + t;
+        const cx = round1(shelfTop + LED_CABLE_COLLECTOR_HEIGHT);
+        const gBack = bi + (behindSkirt(moduleBase + cx) ? skirtDepth : 0);
+        ops.push({
+          kind: "circle",
+          layer: "BOOR_10MM",
+          side: "A",
+          cx,
+          cy: lz(gBack) + LED_CABLE_BACK_OFFSET,
+          diameter: LED_CABLE_HOLE_DIAMETER,
+          depth: t,
+          through: true,
+        });
+        ledCollectorY = bodyBase + moduleBase + cx;
       }
 
       // Beddezijde: de zijde waar de bewerkingen zitten; alleen
@@ -1052,7 +1081,10 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
           } else if (hasCellBelow) {
             ledStripMm += Math.max(0, shelfLen - 2 * dadoInset - 2 * LED_GROOVE_END_MARGIN);
           }
-          if (j < rows) {
+          // Verticale doorvoer: in elke plank behalve de allerbovenste van de
+          // kast. De bovenste plank van een onderste module krijgt hem wél,
+          // anders kan de bekabeling van de module erboven niet omlaag.
+          if (j < rows || m < moduleCount - 1) {
             const left = config.led.side === "links";
             ops.push({
               kind: "circle",
@@ -1250,6 +1282,42 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
     moduleBase += Hm;
   }
 
+  // ---- LED-kabelroute (voor de 3D-weergave) ---------------------------------
+  const ledRoutes: [number, number, number][][] = [];
+  if (config.led.enabled) {
+    const left = config.led.side === "links";
+    const runX = (c: number) =>
+      round1(left ? xs[c] + t + LED_CABLE_SIDE_OFFSET : xs[c + 1] - LED_CABLE_SIDE_OFFSET);
+    // Onderin: net boven de onderste plank, of (zonder binnenstaanders) de
+    // onderkant van het onderste vak.
+    const bottomCellY = Math.min(...cells.map((c) => c.y), config.height);
+    const collectorY = ledCollectorY ?? round1(bottomCellY + LED_CABLE_COLLECTOR_HEIGHT);
+    const runs: { x: number; z: number; top: number }[] = [];
+    for (let c = 0; c < columns; c++) {
+      const colCellsAll = cells.filter((cell) => cell.col === c);
+      if (colCellsAll.length === 0) continue;
+      const top = Math.max(...colCellsAll.map((cell) => cell.y + cell.h));
+      const z = round1(Math.min(...colCellsAll.map((cell) => cell.z)) + LED_CABLE_BACK_OFFSET);
+      runs.push({ x: runX(c), z, top });
+      ledRoutes.push([
+        [runX(c), top, z],
+        [runX(c), collectorY, z],
+      ]);
+    }
+    if (runs.length > 1) {
+      // Horizontale verzamelstreng door de binnenstaanders.
+      ledRoutes.push(runs.map((r) => [r.x, collectorY, r.z] as [number, number, number]));
+    }
+    if (runs.length > 0) {
+      // Afdaling naar de driver aan de gekozen zijde, onder de onderste plank.
+      const driver = left ? runs[0] : runs[runs.length - 1];
+      ledRoutes.push([
+        [driver.x, collectorY, driver.z],
+        [driver.x, round1(bodyBase + 20), driver.z],
+      ]);
+    }
+  }
+
   // ---- Plint ----------------------------------------------------------------
   if (config.base === "plint") {
     const plintLen = round1(W - 2 * t - 2);
@@ -1351,8 +1419,10 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
       unit: "stuks",
     });
     hardware.push({
-      name: "LED-kabel 2-aderig (doorvoer door de planken)",
-      qty: Math.ceil((config.height * columns) / 1000) + 2,
+      // Per kolom een verticale streng over de kasthoogte, plus de
+      // horizontale verzamelstreng onderin, plus speling naar de driver.
+      name: "LED-kabel 2-aderig (verticaal per kolom + verzamelstreng onderin)",
+      qty: Math.ceil((config.height * columns + W) / 1000) + 2,
       unit: "m",
     });
   }
@@ -1435,6 +1505,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
     ghostShelves,
     feet,
     bodyBase,
+    ledRoutes,
     hardware,
     warnings,
   };

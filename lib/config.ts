@@ -32,6 +32,7 @@ export const LED_GROOVE_END_MARGIN = 40; // groef stopt zoveel mm vóór de plan
 export const LED_CABLE_HOLE_DIAMETER = 10; // kabeldoorvoer, doorlopend
 export const LED_CABLE_BACK_OFFSET = 28; // hart doorvoer t.o.v. achterrand plank
 export const LED_CABLE_SIDE_OFFSET = 45; // hart doorvoer t.o.v. staandervlak
+export const LED_CABLE_COLLECTOR_HEIGHT = 40; // hart horizontale doorvoer boven de onderste plank
 export const LED_WATT_PER_M = 9.6; // 24 V strip, voor de driverkeuze
 export const LED_DRIVER_WATT = 150;
 

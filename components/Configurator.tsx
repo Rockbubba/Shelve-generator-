@@ -847,8 +847,10 @@ export default function Configurator() {
                   onChange={(v) => update({ led: { ...config.led, inbouw: v === "inbouw" } })}
                 />
                 <p className="mt-1 text-xs text-neutral-500">
-                  Ø10-doorvoer achter-{config.led.side} in elke plank; de kabels lopen per
-                  kolom omlaag naar de plint, waar de 24 V-driver komt.
+                  Verticaal: Ø10-doorvoer achter-{config.led.side} in elke plank, zodat de
+                  bekabeling per kolom omlaag loopt. Horizontaal: onderin één Ø10-doorvoer
+                  door elke binnenstaander, waar alle kolommen samenkomen in één streng naar
+                  de 24 V-driver in de plint. De route is in de 3D-weergave als lijn te zien.
                 </p>
               </>
             )}

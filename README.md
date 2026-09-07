@@ -228,11 +228,17 @@ boringen op de juiste plek zitten.
   de onderzijde van de plank erboven. *Inbouw* freest een groef 17 × 7 mm
   (laag `LED_GROEF_7MM`, hart op 28 mm van de achterrand, 40 mm vrij van de
   plankuiteinden zodat Cabineo-pockets en deuvels vrij blijven); *opbouw*
-  laat de groef weg. Elke plank behalve de bovenste krijgt een Ø10-doorvoer
-  (`BOOR_10MM_DOOR`) achter-links of -rechts (keuze), 45 mm uit het
-  staandervlak, zodat de kabels per kolom omlaag naar de plint lopen waar de
-  driver komt. De BOM telt striplengte, profiel, driver(s) en kabel; de 3D
-  toont de strips met gloed.
+  laat de groef weg. De bekabeling loopt in twee richtingen, beide als
+  Ø10-doorvoer (`BOOR_10MM_DOOR`), 28 mm uit de achterrand:
+  *verticaal* in elke plank behalve de allerbovenste van de kast, 45 mm uit
+  het staandervlak aan de gekozen zijde (links/rechts), zodat elke kolom een
+  eigen streng omlaag heeft; en *horizontaal* onderin, één doorvoer door elke
+  binnenstaander op 40 mm boven de onderste plank, waar alle kolomstrengen
+  samenkomen in één streng die aan de gekozen zijde door de onderste plank
+  naar de driver in de plint zakt. Bij een kast van meer dan één module krijgt
+  de bovenste plank van een onderliggende module ook een doorvoer. De route
+  zit als polylijn in `model.ledRoutes` en wordt in de 3D-weergave getekend;
+  de BOM telt striplengte, profiel, driver(s) en kabel.
 - **Betonplex** als materiaal (12/15/18/21 mm), filmbekleed dus nerfloos:
   onderdelen mogen gedraaid genest worden.
 - **Plint**: 80 mm hoog tussen de buitenste staanders; standaard 40 mm

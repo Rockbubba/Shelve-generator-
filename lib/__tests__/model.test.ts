@@ -1079,3 +1079,102 @@ describe("betonplex, LED-verlichting en dichtvak", () => {
     expect(nestPanels(model.panels).errors).toHaveLength(0);
   });
 });
+
+describe("LED-bekabeling: verticaal per kolom én horizontaal door de staanders", () => {
+  const LED: Partial<CabinetConfig> = { led: { enabled: true, side: "links", inbouw: true } };
+
+  it("geeft alleen de binnenstaanders een horizontale verzameldoorvoer", () => {
+    const model = buildCabinetModel({ ...ACCEPT, ...LED });
+    const holesOf = (id: string) =>
+      model.panels
+        .find((p) => p.id === id)!
+        .ops.filter((o): o is CircleOp => o.kind === "circle" && o.layer === "BOOR_10MM");
+    // 4 kolommen → S1 en S5 zijn buitenstaanders, S2/S3/S4 binnenstaanders.
+    expect(holesOf("S1")).toHaveLength(0);
+    expect(holesOf("S5")).toHaveLength(0);
+    for (const id of ["S2", "S3", "S4"]) {
+      const holes = holesOf(id);
+      expect(holes, id).toHaveLength(1);
+      expect(holes[0].diameter).toBe(10);
+      expect(holes[0].through).toBe(true);
+      // Onderin, boven de onderste plank en ruim onder de plank erboven.
+      expect(holes[0].cx).toBeGreaterThan(18);
+      expect(holes[0].cx).toBeLessThan(120);
+      // Achterin, op dezelfde diepte als de doorvoeren in de planken.
+      expect(holes[0].cy).toBeCloseTo(28, 1);
+    }
+    // Zonder LED geen enkele doorvoer.
+    const zonder = buildCabinetModel(ACCEPT);
+    expect(zonder.panels.some((p) => p.ops.some((o) => o.layer === "BOOR_10MM"))).toBe(false);
+  });
+
+  it("houdt de verzameldoorvoer vrij van dado's, Cabineo's en de rugsponning", () => {
+    for (const joinery of ["dado", "cabineo"] as const) {
+      for (const rugMount of ["geschroefd", "sponning"] as const) {
+        const model = buildCabinetModel({ ...ACCEPT, ...LED, joinery, rugMount });
+        const s = model.panels.find((p) => p.id === "S3")!;
+        const hole = s.ops.find(
+          (o): o is CircleOp => o.kind === "circle" && o.layer === "BOOR_10MM",
+        )!;
+        for (const op of s.ops) {
+          if (op === hole) continue;
+          if (op.kind === "circle") {
+            const d = Math.hypot(op.cx - hole.cx, op.cy - hole.cy);
+            expect(d, `${joinery}/${rugMount}: ${op.layer}`).toBeGreaterThan(5 + op.diameter / 2);
+          }
+          if (op.kind === "rect") {
+            // Afstand van het hart tot de rechthoek moet groter zijn dan de boorradius.
+            const dx = Math.max(op.x - hole.cx, hole.cx - (op.x + op.w), 0);
+            const dy = Math.max(op.y - hole.cy, hole.cy - (op.y + op.h), 0);
+            expect(Math.hypot(dx, dy), `${joinery}/${rugMount}: ${op.layer}`).toBeGreaterThan(5);
+          }
+        }
+      }
+    }
+  });
+
+  it("levert een kabelroute voor de 3D: verticaal per kolom, horizontaal verzamelend, dan omlaag", () => {
+    const model = buildCabinetModel({ ...ACCEPT, ...LED, base: "plint" });
+    // 4 verticale strengen + 1 horizontale verzamelstreng + 1 afdaling.
+    expect(model.ledRoutes).toHaveLength(6);
+    const verticaal = model.ledRoutes.filter(
+      (r) => r.length === 2 && r[0][0] === r[1][0] && r[0][1] !== r[1][1],
+    );
+    expect(verticaal).toHaveLength(5); // 4 kolommen + de afdaling naar de driver
+    const horizontaal = model.ledRoutes.find((r) => r.length === 4)!;
+    expect(horizontaal).toBeDefined();
+    // Verzamelstreng op één hoogte, oplopend in x over alle kolommen.
+    expect(new Set(horizontaal.map((p) => p[1])).size).toBe(1);
+    for (let i = 1; i < horizontaal.length; i++) {
+      expect(horizontaal[i][0]).toBeGreaterThan(horizontaal[i - 1][0]);
+    }
+    // De verzamelstreng ligt op de hoogte van de doorvoer in de binnenstaander.
+    const s3 = model.panels.find((p) => p.id === "S3")!;
+    const hole = s3.ops.find((o): o is CircleOp => o.kind === "circle" && o.layer === "BOOR_10MM")!;
+    expect(horizontaal[0][1]).toBeCloseTo(model.bodyBase + hole.cx, 1);
+    // Zonder LED geen route.
+    expect(buildCabinetModel(ACCEPT).ledRoutes).toHaveLength(0);
+  });
+
+  it("laat de bekabeling van een tweede module omlaag via de bovenste plank", () => {
+    const model = buildCabinetModel({ ...ACCEPT, ...LED, height: 3000 });
+    expect(model.moduleCount).toBe(2);
+    const topOf = (m: number) =>
+      Math.max(
+        ...model.panels.filter((p) => p.type === "plank" && p.module === m).map((p) => p.place.y),
+      );
+    const heeftDoorvoer = (p: (typeof model.panels)[number]) =>
+      p.ops.some((o) => o.layer === "BOOR_10MM");
+    const planken = model.panels.filter((p) => p.type === "plank");
+    for (const p of planken) {
+      const isTopVanKast = p.module === 1 && p.place.y >= topOf(1) - 0.01;
+      expect(heeftDoorvoer(p), `${p.id} (module ${p.module})`).toBe(!isTopVanKast);
+    }
+    // De verzameldoorvoer zit alleen in de onderste module.
+    const collectors = model.panels.filter(
+      (p) => p.type === "staander" && p.ops.some((o) => o.layer === "BOOR_10MM"),
+    );
+    expect(collectors.every((p) => p.module === 0)).toBe(true);
+    expect(collectors).toHaveLength(3);
+  });
+});
