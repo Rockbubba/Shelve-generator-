@@ -18,6 +18,7 @@ vault/
   ledger/ledger.json    the blueprint on the wall: every claim and its status
   ledger/attempts/      one directory per entry: every proposal the crew made
   crew/run.py           the crew: generate, critique, verify loop (see crew/README.md)
+  crew/proposals/       hand-written proofs handed to the door via `scripted:`
   crew/test_crew.sh     regression test for the loop, no API keys needed
   scripts/check.sh      the door: build + audit, exit 0 or nothing changes hands
   scripts/audit.py      compares every ledger status against `#print axioms`
@@ -81,8 +82,10 @@ installs itself on first use.
 
 `crew/run.py` drives models at an `open` entry through the door. See
 `crew/README.md`. The stage-one practice target
-`practice.stage1_sum_first_odd` ships `open` on purpose: closing it is the
-first job, and `crew/test_crew.sh` proves the loop can.
+`practice.stage1_sum_first_odd` shipped `open` as the first job and is now
+`verified`, closed by a hand-written proposal through the scripted provider.
+That exercised the door on a live entry; it did not exercise the loop
+against a real model, which still wants a run with credentials.
 
 ## Current targets
 
