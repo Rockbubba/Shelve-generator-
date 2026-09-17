@@ -257,7 +257,8 @@ export class CabinetScene {
       const { geo, centered } = this.panelGeometry(p);
       const selected =
         (p.shelfKey && p.shelfKey === selectedShelfKey) ||
-        (p.staanderKey && p.staanderKey === selectedShelfKey);
+        (p.staanderKey && p.staanderKey === selectedShelfKey) ||
+        (p.dividerKey && p.dividerKey === selectedShelfKey);
       const mat =
         selected
           ? this.toonMatSelected
@@ -283,6 +284,10 @@ export class CabinetScene {
       }
       if (p.staanderKey) {
         mesh.userData.shelfKey = p.staanderKey; // zelfde selectiekanaal
+        this.shelfTargets.push(mesh);
+      }
+      if (p.dividerKey) {
+        mesh.userData.shelfKey = p.dividerKey;
         this.shelfTargets.push(mesh);
       }
       group.add(mesh);

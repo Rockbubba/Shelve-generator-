@@ -46,6 +46,8 @@ export function normalizeConfig(raw: unknown): CabinetConfig {
     omittedShelves: obj(DEFAULT_CONFIG.omittedShelves, r.omittedShelves),
     shelfOffsets: obj(DEFAULT_CONFIG.shelfOffsets, r.shelfOffsets),
     columnOffsets: obj(DEFAULT_CONFIG.columnOffsets, r.columnOffsets),
+    dividers: obj(DEFAULT_CONFIG.dividers, r.dividers),
+    dividerOffsets: obj(DEFAULT_CONFIG.dividerOffsets, r.dividerOffsets),
     frontProfile: obj(DEFAULT_CONFIG.frontProfile, r.frontProfile),
     backTaper: obj(DEFAULT_CONFIG.backTaper, r.backTaper),
     wallSkirting: obj(DEFAULT_CONFIG.wallSkirting, r.wallSkirting),

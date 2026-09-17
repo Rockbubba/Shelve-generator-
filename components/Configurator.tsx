@@ -7,6 +7,8 @@ import {
   CellFill,
   DEFAULT_CONFIG,
   MAX_PLINTH_SETBACK,
+  MIN_SUBCELL_WIDTH,
+  maxDividersForWidth,
   PLINTH_HEIGHT,
   PLINTH_SETBACK,
   DEPTH_OPTIONS,
@@ -186,8 +188,69 @@ export default function Configurator() {
     });
   }, []);
 
+  /** Sleutels: selectie `div:m:c:row:k`, config `m:c:row:k`, vak `m:c:row`. */
+  const setDividerOffset = useCallback((rawKey: string, offset: number) => {
+    setConfig((c) => {
+      const dividerOffsets = { ...c.dividerOffsets };
+      if (Math.abs(offset) < 0.01) delete dividerOffsets[rawKey];
+      else dividerOffsets[rawKey] = Math.round(offset);
+      return { ...c, dividerOffsets };
+    });
+  }, []);
+
+  const setDividerCount = useCallback((cellKey: string, n: number) => {
+    setConfig((c) => {
+      const dividers = { ...c.dividers };
+      const dividerOffsets = { ...c.dividerOffsets };
+      if (n <= 0) delete dividers[cellKey];
+      else dividers[cellKey] = Math.round(n);
+      // Verschuivingen van schotten die niet meer bestaan opruimen.
+      for (const key of Object.keys(dividerOffsets)) {
+        if (!key.startsWith(`${cellKey}:`)) continue;
+        const k = Number(key.slice(cellKey.length + 1));
+        if (k >= n) delete dividerOffsets[key];
+      }
+      return { ...c, dividers, dividerOffsets };
+    });
+  }, []);
+
+  /** Verwijder één specifiek schot; de schotten erna schuiven een index op. */
+  const removeDivider = useCallback((rawKey: string) => {
+    setConfig((c) => {
+      const parts = rawKey.split(":");
+      const k = Number(parts.pop());
+      const cellKey = parts.join(":");
+      const count = c.dividers[cellKey] ?? 0;
+      if (count <= 0) return c;
+      const dividers = { ...c.dividers };
+      const dividerOffsets = { ...c.dividerOffsets };
+      if (count - 1 <= 0) delete dividers[cellKey];
+      else dividers[cellKey] = count - 1;
+      delete dividerOffsets[`${cellKey}:${k}`];
+      for (let i = k + 1; i < count; i++) {
+        const v = dividerOffsets[`${cellKey}:${i}`];
+        delete dividerOffsets[`${cellKey}:${i}`];
+        if (v !== undefined) dividerOffsets[`${cellKey}:${i - 1}`] = v;
+      }
+      return { ...c, dividers, dividerOffsets };
+    });
+    setSelectedShelf(null);
+  }, []);
+
   const selectedStaander = selectedShelf?.startsWith("col:")
     ? model.panels.find((p) => p.staanderKey === selectedShelf) ?? null
+    : null;
+
+  const selectedCell = selectedShelf?.startsWith("cell:")
+    ? model.cells.find((c) => `cell:${c.key}` === selectedShelf) ?? null
+    : null;
+
+  const selectedDivider = selectedShelf?.startsWith("div:")
+    ? model.panels.find((p) => p.dividerKey === selectedShelf) ?? null
+    : null;
+  const selectedDividerRaw = selectedShelf?.startsWith("div:") ? selectedShelf.slice(4) : null;
+  const selectedDividerCell = selectedDividerRaw
+    ? model.cells.find((c) => c.key === selectedDividerRaw.split(":").slice(0, 3).join(":")) ?? null
     : null;
 
   const omitShelf = useCallback((key: string) => {
@@ -196,7 +259,7 @@ export default function Configurator() {
   }, []);
 
   const selectedPlank =
-    selectedShelf && !selectedShelf.startsWith("col:")
+    selectedShelf && !/^(col|cell|div):/.test(selectedShelf)
       ? model.panels.find((p) => p.shelfKey === selectedShelf) ?? null
       : null;
 
@@ -466,12 +529,83 @@ export default function Configurator() {
               model={model}
               offsets={config.shelfOffsets}
               columnOffsets={config.columnOffsets}
+              dividerOffsets={config.dividerOffsets}
               selected={selectedShelf}
               onSelect={setSelectedShelf}
               onOffsetChange={setShelfOffset}
               onColumnOffsetChange={setColumnOffset}
+              onDividerOffsetChange={setDividerOffset}
               onRestore={onShelfTap}
             />
+            {selectedCell ? (
+              <div className="mt-2 rounded-xl bg-blue-50 p-3">
+                <Stepper
+                  label="Tussenschotten in dit vak"
+                  value={config.dividers[selectedCell.key] ?? 0}
+                  min={0}
+                  max={maxDividersForWidth(selectedCell.w, config.thickness)}
+                  step={1}
+                  unit=""
+                  hint={`max. ${maxDividersForWidth(selectedCell.w, config.thickness)} bij ${formatMm(selectedCell.w)} mm breed`}
+                  onChange={(v) => setDividerCount(selectedCell.key, v)}
+                />
+                <p className="mt-1 text-xs text-neutral-500">
+                  Gelijk verdeeld; sleep een schot om het te verplaatsen. Deelvakken
+                  blijven minimaal {MIN_SUBCELL_WIDTH} mm breed.
+                </p>
+                <div className="mt-1 flex">
+                  <button
+                    type="button"
+                    className="btn-touch ml-auto rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white active:bg-neutral-700"
+                    onClick={() => setSelectedShelf(null)}
+                  >
+                    Klaar
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            {selectedDivider && selectedDividerRaw && selectedDividerCell ? (
+              <div className="mt-2 rounded-xl bg-blue-50 p-3">
+                <Stepper
+                  label="Positie schot (hart)"
+                  value={Math.round(selectedDivider.place.x + config.thickness / 2)}
+                  min={Math.round(selectedDividerCell.x)}
+                  max={Math.round(selectedDividerCell.x + selectedDividerCell.w)}
+                  step={10}
+                  onChange={(v) => {
+                    const cur = selectedDivider.place.x + config.thickness / 2;
+                    setDividerOffset(
+                      selectedDividerRaw,
+                      (config.dividerOffsets[selectedDividerRaw] ?? 0) + (v - cur),
+                    );
+                  }}
+                  hint={`minimaal ${MIN_SUBCELL_WIDTH} mm per deelvak`}
+                />
+                <div className="mt-1 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="btn-touch rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium active:bg-neutral-100"
+                    onClick={() => setDividerOffset(selectedDividerRaw, 0)}
+                  >
+                    Terug op grid
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-touch rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium active:bg-neutral-100"
+                    onClick={() => removeDivider(selectedDividerRaw)}
+                  >
+                    Schot verwijderen
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-touch ml-auto rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white active:bg-neutral-700"
+                    onClick={() => setSelectedShelf(null)}
+                  >
+                    Klaar
+                  </button>
+                </div>
+              </div>
+            ) : null}
             {selectedStaander && selectedShelf ? (
               <div className="mt-2 rounded-xl bg-blue-50 p-3">
                 <Stepper
@@ -547,22 +681,24 @@ export default function Configurator() {
                   </button>
                 </div>
               </div>
-            ) : selectedStaander ? null : (
+            ) : selectedStaander || selectedCell || selectedDivider ? null : (
               <p className="mt-2 text-xs text-neutral-500">
                 Selecteer een tussenplank (hier of in 3D) om hem hoger/lager te
                 zetten of weg te laten, of een binnenstaander om hem naar links
-                of rechts te schuiven. Weggelaten planken zijn gestippeld — tik
-                erop om ze terug te zetten.
+                of rechts te schuiven. Tik in een leeg vak om er tussenschotten in
+                te zetten. Weggelaten planken zijn gestippeld — tik erop om ze
+                terug te zetten.
               </p>
             )}
             {(Object.keys(config.omittedShelves).length > 0 ||
               Object.keys(config.shelfOffsets).length > 0 ||
-              Object.keys(config.columnOffsets).length > 0) && (
+              Object.keys(config.columnOffsets).length > 0 ||
+              Object.keys(config.dividerOffsets).length > 0) && (
               <button
                 type="button"
                 className="btn-touch mt-2 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 active:bg-neutral-100"
                 onClick={() => {
-                  update({ omittedShelves: {}, shelfOffsets: {}, columnOffsets: {} });
+                  update({ omittedShelves: {}, shelfOffsets: {}, columnOffsets: {}, dividerOffsets: {} });
                   setSelectedShelf(null);
                 }}
               >

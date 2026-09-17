@@ -1294,3 +1294,123 @@ describe("plint: inkeping in de binnenstaanders", () => {
     }
   });
 });
+
+
+describe("tussenschotten", () => {
+  const cellOf = (m: ReturnType<typeof buildCabinetModel>, key: string) => m.cells.find((c) => c.key === key)!;
+  const schotten = (m: ReturnType<typeof buildCabinetModel>, cellKey: string) =>
+    m.panels.filter((p) => p.type === "schot" && p.dividerKey?.startsWith(`div:${cellKey}:`)).sort((a, b) => a.place.x - b.place.x);
+
+  it("verdeelt schotten gelijk over het vak en geeft ze de vakhoogte en -diepte", () => {
+    const model = buildCabinetModel({ ...ACCEPT, joinery: "cabineo", dividers: { "0:1:1": 2 } });
+    const cell = cellOf(model, "0:1:1");
+    const ds = schotten(model, "0:1:1");
+    expect(ds).toHaveLength(2);
+    expect(ds.map((d) => d.dividerKey)).toEqual(["div:0:1:1:0", "div:0:1:1:1"]);
+    const t = ACCEPT.thickness;
+    const sub = [ds[0].place.x - cell.x, ds[1].place.x - (ds[0].place.x + t), cell.x + cell.w - (ds[1].place.x + t)];
+    expect(Math.max(...sub) - Math.min(...sub)).toBeLessThan(0.3);
+    for (const d of ds) {
+      expect(d.place.h).toBeCloseTo(cell.h, 1);
+      expect(d.length).toBeCloseTo(cell.h, 1);
+      expect(d.width).toBeCloseTo(ACCEPT.depth, 1);
+      expect(d.place.y).toBeCloseTo(cell.y, 1);
+      expect(d.machineSide).toBe("A");
+    }
+    expect(model.panels.filter((p) => p.type === "schot")).toHaveLength(2);
+  });
+
+  it("dado-kast: dado in de plank erboven, schroeven van onderaf door de plank eronder, inkeping aan de voorhoek", () => {
+    const model = buildCabinetModel({ ...ACCEPT, dividers: { "0:1:1": 1 } });
+    const d = schotten(model, "0:1:1")[0];
+    const cell = cellOf(model, "0:1:1");
+    // Steekt 7 mm in de plank erboven; inkeping boven-voor.
+    expect(d.length).toBeCloseTo(cell.h + 7, 1);
+    expect(d.notches).toHaveLength(1);
+    expect(d.notches[0].x).toBeCloseTo(d.length - 7, 1);
+    expect(d.notches[0].y + d.notches[0].h).toBeCloseTo(d.width, 1);
+    // Plank erboven: één dado op zijde B ter plekke van het schot.
+    const boven = model.panels.find((p) => p.type === "plank" && Math.abs(p.place.y - (cell.y + cell.h)) < 0.01 && p.place.x < d.place.x && p.place.x + p.place.w > d.place.x)!;
+    const dado = boven.ops.filter((o): o is RectOp => o.kind === "rect" && o.layer === "DADO_7MM");
+    expect(dado).toHaveLength(1);
+    expect(dado[0].side).toBe("B");
+    expect(boven.place.x + dado[0].x).toBeCloseTo(d.place.x, 1);
+    expect(dado[0].w).toBe(ACCEPT.thickness);
+    expect(dado[0].h).toBeCloseTo(ACCEPT.depth - 30, 1);
+    // Plank eronder: twee Ø4,5 doorlopend, in het hart van het schot.
+    const onder = model.panels.find((p) => p.type === "plank" && Math.abs(p.place.y + p.place.h - cell.y) < 0.01 && p.place.x < d.place.x && p.place.x + p.place.w > d.place.x)!;
+    const schroef = onder.ops.filter((o): o is CircleOp => o.kind === "circle" && o.layer === "BOOR_4_5MM");
+    expect(schroef).toHaveLength(2);
+    for (const h of schroef) {
+      expect(h.through).toBe(true);
+      expect(onder.place.x + h.cx).toBeCloseTo(d.place.x + ACCEPT.thickness / 2, 1);
+    }
+    expect(model.hardware.find((h) => h.name.includes("tussenschotten"))?.qty).toBe(2);
+    expect(nestPanels(model.panels).errors).toHaveLength(0);
+  });
+
+  it("cabineo-kast: pockets in het schot, blinde boutgaten erboven en doorlopende eronder", () => {
+    const model = buildCabinetModel({ ...ACCEPT, joinery: "cabineo", dividers: { "0:1:1": 1 } });
+    const zonder = buildCabinetModel({ ...ACCEPT, joinery: "cabineo" });
+    const d = schotten(model, "0:1:1")[0];
+    const cell = cellOf(model, "0:1:1");
+    const pockets = d.ops.filter((o) => o.layer === "CABINEO_11MM");
+    expect(pockets).toHaveLength(4); // 2 uiteinden × 2
+    expect(pockets.every((o) => o.side === "A")).toBe(true);
+    const boven = model.panels.find((p) => p.type === "plank" && Math.abs(p.place.y - (cell.y + cell.h)) < 0.01 && p.place.x < d.place.x && p.place.x + p.place.w > d.place.x)!;
+    const onder = model.panels.find((p) => p.type === "plank" && Math.abs(p.place.y + p.place.h - cell.y) < 0.01 && p.place.x < d.place.x && p.place.x + p.place.w > d.place.x)!;
+    const inMidden = (p: typeof boven) => p.ops.filter((o): o is CircleOp => o.kind === "circle" && o.diameter === 5 && Math.abs(p.place.x + o.cx - (d.place.x + ACCEPT.thickness / 2)) < 0.1);
+    const bovenGaten = inMidden(boven);
+    const onderGaten = inMidden(onder);
+    expect(bovenGaten).toHaveLength(2);
+    expect(bovenGaten.every((h) => !h.through && h.depth === ACCEPT.cabineoSize)).toBe(true);
+    expect(onderGaten).toHaveLength(2);
+    expect(onderGaten.every((h) => h.through)).toBe(true);
+    const cab = (m: typeof model) => m.hardware.find((h) => h.name.startsWith("Lamello Cabineo"))!.qty;
+    expect(cab(model) - cab(zonder)).toBe(4);
+    expect(nestPanels(model.panels).errors).toHaveLength(0);
+  });
+
+  it("begrenst het aantal en de verschuiving op de minimale deelvakbreedte", () => {
+    const veel = buildCabinetModel({ ...ACCEPT, dividers: { "0:1:1": 20 } });
+    const cell = cellOf(veel, "0:1:1");
+    const nMax = Math.floor((cell.w - 100) / (100 + ACCEPT.thickness));
+    expect(schotten(veel, "0:1:1")).toHaveLength(nMax);
+    expect(veel.warnings.some((w) => w.includes("tussenschot"))).toBe(true);
+
+    const ver = buildCabinetModel({ ...ACCEPT, dividers: { "0:1:1": 1 }, dividerOffsets: { "0:1:1:0": -5000 } });
+    const d = schotten(ver, "0:1:1")[0];
+    expect(d.place.x - cellOf(ver, "0:1:1").x).toBeCloseTo(100, 1);
+
+    const mid = buildCabinetModel({ ...ACCEPT, dividers: { "0:1:1": 1 }, dividerOffsets: { "0:1:1:0": 40 } });
+    const d0 = schotten(buildCabinetModel({ ...ACCEPT, dividers: { "0:1:1": 1 } }), "0:1:1")[0];
+    expect(schotten(mid, "0:1:1")[0].place.x - d0.place.x).toBeCloseTo(40, 1);
+  });
+
+  it("volgt verloop en profiel en krijgt een LED-doorvoer", () => {
+    const model = buildCabinetModel({
+      ...ACCEPT,
+      dividers: { "0:2:2": 1 },
+      backTaper: { left: 150, right: 0 },
+      frontProfile: { type: "bol", amplitude: 60, periodes: 2, mirror: false },
+      led: { enabled: true, side: "links", inbouw: true },
+    });
+    const d = schotten(model, "0:2:2")[0];
+    const xc = d.place.x + ACCEPT.thickness / 2;
+    const W = model.snappedWidth;
+    const back = 150 * (1 - xc / W);
+    expect(d.place.z).toBeCloseTo(back, 0);
+    expect(d.place.d).toBeLessThan(ACCEPT.depth - back + 0.01);
+    expect(d.ops.some((o) => o.kind === "circle" && o.layer === "BOOR_10MM" && o.through)).toBe(true);
+  });
+
+  it("verdwijnt met de config en telt in BOM en nesting", () => {
+    // Twee kolommen: een vak van ~880 mm heeft ruimte voor 3 schotten.
+    const met = buildCabinetModel({ ...ACCEPT, columns: 2, dividers: { "0:0:0": 3 } });
+    expect(met.panels.filter((p) => p.type === "schot")).toHaveLength(3);
+    expect(buildCabinetModel(ACCEPT).panels.filter((p) => p.type === "schot")).toHaveLength(0);
+    const n = nestPanels(met.panels);
+    expect(n.errors).toHaveLength(0);
+    expect(n.sheets.flatMap((s) => s.placements).filter((pl) => pl.panel.type === "schot")).toHaveLength(3);
+  });
+});

@@ -13,6 +13,7 @@
  */
 
 import {
+  BackTaper,
   CabinetConfig,
   CellFill,
   DADO_DEPTH,
@@ -42,6 +43,11 @@ import {
   MAX_PART_LENGTH,
   MIN_CELL_HEIGHT,
   MIN_CELL_WIDTH,
+  MIN_SUBCELL_WIDTH,
+  DIVIDER_SCREW_DIAMETER,
+  DIVIDER_SCREWS_PER_JOINT,
+  maxDividersForWidth,
+  dividerKey,
   PLINTH_HEIGHT,
   PLINTH_SETBACK,
   RUG_CLEARANCE,
@@ -85,6 +91,7 @@ export type Layer =
   | "BOOR_8MM"
   | "BOOR_5MM"
   | "BOOR_5_5MM"
+  | "BOOR_4_5MM"
   | "BOOR_15MM"
   | "CABINEO_11MM"
   | "RUG_SPONNING"
@@ -140,7 +147,7 @@ export interface PathOp {
 
 export type Operation = RectOp | CircleOp | TextOp | PathOp;
 
-export type PanelType = "staander" | "plank" | "plint" | "rug" | "deur";
+export type PanelType = "staander" | "plank" | "schot" | "plint" | "rug" | "deur";
 
 /** Heeft een vak met deze vulling een rugpaneel? (dichtvak = deur + rug) */
 export function fillHasRug(fill: CellFill): boolean {
@@ -188,6 +195,8 @@ export interface Panel {
   shelfKey?: string;
   /** Alleen voor verplaatsbare binnenstaanders: sleutel `col:${i}`. */
   staanderKey?: string;
+  /** Alleen voor tussenschotten: sleutel `div:${cellKey}:${k}`. */
+  dividerKey?: string;
   /** Rotatie om de verticale as (rad), voor een rug tegen een schuine muur. */
   yaw?: number;
 }
@@ -470,12 +479,41 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
   }
 
   // Achterzijde: lineair verloop (scheve muur) en bestaande muurplint.
-  const taper = config.backTaper;
+  // De inkorting wordt begrensd zodat de kast nergens ondieper wordt dan
+  // MIN_PROFILE_DEPTH — ook niet in combinatie met een voorkantprofiel, dat
+  // op dezelfde plek diepte wegneemt.
+  const rawTaper = config.backTaper;
+  let taperScale = 1;
+  for (let k = 0; k <= 32; k++) {
+    const x = (W * k) / 32;
+    const back = rawTaper.left + (rawTaper.right - rawTaper.left) * (k / 32);
+    if (back <= 0) continue;
+    const ruimte = frontAt(x) - MIN_PROFILE_DEPTH;
+    if (back > ruimte) taperScale = Math.min(taperScale, Math.max(0, ruimte) / back);
+  }
+  const taper: BackTaper =
+    taperScale < 1
+      ? { left: round1(rawTaper.left * taperScale), right: round1(rawTaper.right * taperScale) }
+      : rawTaper;
+  if (taperScale < 1) {
+    warnings.push(
+      `Inkorting achterzijde begrensd op ${taper.left} / ${taper.right} mm zodat de kast minimaal ${MIN_PROFILE_DEPTH} mm diep blijft.`,
+    );
+  }
   const backAt = (x: number) =>
     round1(
       taper.left +
         (taper.right - taper.left) * Math.min(1, Math.max(0, x / W)),
     );
+  /** Helling van de achterwand over de breedte (dz/dx). */
+  const backSlope = W > 0 ? (taper.right - taper.left) / W : 0;
+  /** Rotatie om de verticale as waarmee een rugpaneel het verloop volgt. */
+  const backYaw = backSlope !== 0 ? -Math.atan(backSlope) : undefined;
+  /**
+   * Een gekantelde rug moet langer zijn dan de opening die hij afdekt:
+   * horizontale overspanning / cos(hoek).
+   */
+  const backStretch = Math.sqrt(1 + backSlope * backSlope);
   const skirt = config.wallSkirting;
   // Hoogte van de muurplint boven de romp-onderkant (romp staat evt. op poten).
   const skirtNotchH =
@@ -552,6 +590,9 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
   let ledStripMm = 0;
   let dowelJoints = 0;
   let cabineoJoints = 0;
+  let dividerNo = 0;
+  let dividerCount = 0;
+  let dividerWarned = false;
   let rugCellCount = 0;
   let tallCellWarned = false;
 
@@ -655,6 +696,56 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
       }
       colCells.push(list);
     }
+
+    // ---- Tussenschotten: planning ---------------------------------------------
+    // Verticale schotten binnen een vak, gelijk verdeeld over de vakbreedte en
+    // per schot verschuifbaar; elk deelvak blijft minimaal MIN_SUBCELL_WIDTH.
+    interface DividerPlan {
+      key: string;
+      cellKey: string;
+      cell: ColumnCell;
+      /** Linkerkant van het schot, globale x. */
+      x: number;
+    }
+    const colDividers: DividerPlan[][] = [];
+    for (let c = 0; c < columns; c++) {
+      const list: DividerPlan[] = [];
+      const cw = colWidth(c);
+      const left = xs[c] + t;
+      const nMax = maxDividersForWidth(cw, t);
+      for (const cell of colCells[c]) {
+        const ck = cellKey(m, c, cell.row);
+        const wanted = Math.max(0, Math.floor(config.dividers[ck] ?? 0));
+        const n = Math.min(wanted, nMax);
+        if (wanted > nMax && !dividerWarned) {
+          dividerWarned = true;
+          warnings.push(
+            `Een vak van ${cw} mm breed kan maximaal ${nMax} tussenschot${nMax === 1 ? "" : "ten"} hebben (deelvakken van minimaal ${MIN_SUBCELL_WIDTH} mm).`,
+          );
+        }
+        if (n === 0) continue;
+        const pitch = (cw - n * t) / (n + 1);
+        const gridX = (k: number) => left + (k + 1) * pitch + k * t;
+        const rawX = (k: number) => gridX(k) + (config.dividerOffsets[dividerKey(ck, k)] ?? 0);
+        let prevRight = left;
+        for (let k = 0; k < n; k++) {
+          const nextRaw = k + 1 === n ? left + cw : rawX(k + 1);
+          const lo = prevRight + MIN_SUBCELL_WIDTH;
+          const hi = Math.max(lo, nextRaw - t - MIN_SUBCELL_WIDTH);
+          const x = round1(Math.min(Math.max(rawX(k), lo), hi));
+          list.push({ key: dividerKey(ck, k), cellKey: ck, cell, x });
+          prevRight = x + t;
+        }
+      }
+      colDividers.push(list);
+    }
+    /** Diepte-geometrie van een schot: het staat op één x, dus rechthoekig. */
+    const dividerGeom = (d: DividerPlan) => {
+      const xc = d.x + t / 2;
+      const gBack = backAt(xc) + (behindSkirt(moduleBase + d.cell.y) ? skirtDepth : 0);
+      const gFront = profiled ? round1(frontAt(xc)) : D;
+      return { xc, gBack, gFront, depth: round1(gFront - gBack) };
+    };
 
     // ---- LED-bekabeling ------------------------------------------------------
     // De strips zitten achter-boven in elk vak en lopen als één lijn door over
@@ -1079,6 +1170,74 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
           }
         }
 
+        // Tussenschotten: het vak onder deze plank hangt zijn schotten aan de
+        // onderzijde (B, de gefreesde zijde) — dado bij een dado-kast, blinde
+        // Cabineo-boutgaten bij Cabineo. Het vak boven deze plank zet zijn
+        // schotten erop vast met doorlopende boringen van onderaf: schroeven
+        // (dado) of Cabineo-bouten.
+        const cellBelow = colCells[c].find((cell) => Math.abs(cell.y + cell.h - yj) < 0.01);
+        const cellAbove = colCells[c].find((cell) => Math.abs(cell.y - (yj + t)) < 0.01);
+        for (const d of colDividers[c]) {
+          const g = dividerGeom(d);
+          const lx = round1(d.x - plankX0);
+          if (d.cell === cellBelow) {
+            if (joinery === "dado") {
+              ops.push({
+                kind: "rect",
+                layer: "DADO_7MM",
+                side: "B",
+                x: lx,
+                y: lz(g.gBack),
+                w: t,
+                h: round1(g.gFront - DADO_FRONT_STOP - g.gBack),
+                depth: DADO_DEPTH,
+              });
+            } else {
+              for (const cy of [lz(g.gBack + cabOff.a), lz(g.gFront - cabOff.a)]) {
+                ops.push({
+                  kind: "circle",
+                  layer: hplMaterial ? "BOOR_5_5MM" : "BOOR_5MM",
+                  side: "B",
+                  cx: round1(lx + t / 2),
+                  cy,
+                  diameter: hplMaterial ? CABINEO_BOLT_DIAMETER_HPL : CABINEO_BOLT_DIAMETER,
+                  depth: config.cabineoSize,
+                  through: false,
+                });
+              }
+            }
+          }
+          if (d.cell === cellAbove) {
+            if (joinery === "dado") {
+              for (const f of [0.25, 0.75]) {
+                ops.push({
+                  kind: "circle",
+                  layer: "BOOR_4_5MM",
+                  side: "B",
+                  cx: round1(lx + t / 2),
+                  cy: lz(g.gBack + g.depth * f),
+                  diameter: DIVIDER_SCREW_DIAMETER,
+                  depth: t,
+                  through: true,
+                });
+              }
+            } else {
+              for (const cy of [lz(g.gBack + cabOff.a), lz(g.gFront - cabOff.a)]) {
+                ops.push({
+                  kind: "circle",
+                  layer: hplMaterial ? "BOOR_5_5MM" : "BOOR_5MM",
+                  side: "B",
+                  cx: round1(lx + t / 2),
+                  cy,
+                  diameter: hplMaterial ? CABINEO_BOLT_DIAMETER_HPL : CABINEO_BOLT_DIAMETER,
+                  depth: t,
+                  through: true,
+                });
+              }
+            }
+          }
+        }
+
         // RUG_SPONNING in de plank (alleen bij rug-in-sponning):
         // bovenvlak voor het vak erboven, ondervlak voor het vak eronder.
         // Volgt de (eventueel schuine) achterrand.
@@ -1213,6 +1372,101 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
       }
     }
 
+    // ---- Tussenschotten: panelen --------------------------------------------
+    // Lokaal frame als een staander: u = hoogte vanaf de vakbodem, v = diepte
+    // vanaf de eigen achterkant; bewerkt op zijde A (vlak richting +x).
+    for (let c = 0; c < columns; c++) {
+      for (const d of colDividers[c]) {
+        const g = dividerGeom(d);
+        dividerNo++;
+        dividerCount++;
+        const id = `T${dividerNo}`;
+        const Ld = joinery === "dado" ? round1(d.cell.h + DADO_DEPTH) : round1(d.cell.h);
+        const Dd = g.depth;
+        const lz = (gz: number) => round1(gz - g.gBack);
+        const ops: Operation[] = [];
+        const notches: { x: number; y: number; w: number; h: number }[] = [];
+
+        if (joinery === "dado") {
+          // Bovenkant steekt DADO_DEPTH in de plank erboven; de dado stopt
+          // 30 mm vóór de voorzijde, dus de voorhoek krijgt dezelfde inkeping
+          // als een plank. Onderaan staat het schot op de plank en wordt het
+          // van onderaf geschroefd.
+          notches.push({ x: Ld - DADO_DEPTH, y: Dd - notchLen, w: DADO_DEPTH, h: notchLen });
+        } else {
+          // Cabineo-pockets tegen beide uiteinden, in het vlak van het schot.
+          for (const end of [0, 1]) {
+            for (const cy of [lz(g.gBack + cabOff.a), lz(g.gFront - cabOff.a)]) {
+              if (config.cabineoVariant === "boor15") {
+                for (const cc of CABINEO_HOLE_CENTERS) {
+                  ops.push({
+                    kind: "circle",
+                    layer: "BOOR_15MM",
+                    side: "A",
+                    cx: end === 0 ? cc : round1(Ld - cc),
+                    cy,
+                    diameter: CABINEO_HOLE_DIAMETER,
+                    depth: CABINEO_POCKET_DEPTH,
+                    through: false,
+                  });
+                }
+              } else {
+                const pocket = cabineoPocketContour(config.cabineoVariant);
+                ops.push({
+                  kind: "path",
+                  layer: "CABINEO_11MM",
+                  side: "A",
+                  points: pocket.map(
+                    ([px, py]) => [end === 0 ? px : round1(Ld - px), round1(cy + py)] as [number, number],
+                  ),
+                  depth: CABINEO_POCKET_DEPTH,
+                });
+              }
+            }
+            cabineoJoints++;
+          }
+        }
+
+        // LED: de strip loopt achter-boven door het vak; het schot krijgt een
+        // doorvoer zodat de twee delen doorgelust kunnen worden.
+        if (config.led.enabled) {
+          ops.push({
+            kind: "circle",
+            layer: "BOOR_10MM",
+            side: "A",
+            cx: round1(d.cell.h - LED_JUMPER_DROP),
+            cy: LED_CABLE_BACK_OFFSET,
+            diameter: LED_CABLE_HOLE_DIAMETER,
+            depth: t,
+            through: true,
+          });
+        }
+
+        ops.push(engrave(id, Ld, Dd, "A"));
+        panels.push({
+          id,
+          type: "schot",
+          material: "plaat18",
+          length: Ld,
+          width: Dd,
+          thickness: t,
+          ops,
+          notches,
+          machineSide: "A",
+          dividerKey: `div:${d.key}`,
+          place: {
+            x: d.x,
+            y: bodyBase + moduleBase + d.cell.y,
+            z: g.gBack,
+            w: t,
+            h: Ld,
+            d: Dd,
+          },
+          module: m,
+        });
+      }
+    }
+
     // ---- Deuren (dichtvak) --------------------------------------------------
     // Inliggende deur; bewerkingen (Ø35-cups) aan de binnenzijde (B), de
     // zichtzijde blijft onbewerkt. Lokaal frame: x langs de langste zijde.
@@ -1285,7 +1539,10 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
         if (!fillHasRug(cell.fill)) continue;
         rugNo++;
         const id = `R${rugNo}`;
-        const rw = round1(colWidth(c) + 2 * rugOversize);
+        // Horizontale overspanning van de opening; het paneel zelf is bij een
+        // scheve achterwand langer omdat het gekanteld staat.
+        const spanX = round1(colWidth(c) + 2 * rugOversize);
+        const rw = round1(spanX * backStretch);
         const rh = round1(cell.h + 2 * rugOversize);
         const gBack = cellBack + (behindSkirt(moduleBase + cell.y) ? skirtDepth : 0);
         panels.push({
@@ -1298,8 +1555,11 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
           ops: [engrave(id, Math.max(rw, rh), Math.min(rw, rh), "A")],
           notches: [],
           machineSide: "A",
+          yaw: backYaw,
           place: {
-            x: xs[c] + t - rugOversize,
+            // Het paneel draait om zijn hart, dus het hart moet op het hart
+            // van de opening liggen — ook als het paneel langer is.
+            x: round1(xs[c] + t + colWidth(c) / 2 - rw / 2),
             y: bodyBase + moduleBase + cell.y - rugOversize,
             z: sponning
               ? gBack + RUG_GROOVE_BACK_OFFSET - HDF_THICKNESS / 2
@@ -1331,7 +1591,9 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
           else break;
         }
         const xEnd = endI === columns ? W : xs[endI] + t / 2;
-        const pieceW = round1(xEnd - xStart);
+        const spanX = round1(xEnd - xStart);
+        // Gekanteld paneel: langer dan de horizontale overspanning.
+        const pieceW = round1(spanX * backStretch);
         if (pieceW > usable) {
           warnings.push(
             `Achterwandstuk van ${pieceW} mm past niet op de HDF-plaat (max ${usable} mm) — verklein de kolombreedte of verdeel de kast.`,
@@ -1340,6 +1602,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
         rugNo++;
         const id = `R${rugNo}`;
         const xc = (xStart + xEnd) / 2;
+        const pieceX = round1(xc - pieceW / 2);
         panels.push({
           id,
           type: "rug",
@@ -1350,9 +1613,9 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
           ops: [engrave(id, Math.max(pieceW, pieceH), Math.min(pieceW, pieceH), "A")],
           notches: [],
           machineSide: "A",
-          yaw: slope !== 0 ? -Math.atan(slope) : undefined,
+          yaw: backYaw,
           place: {
-            x: xStart,
+            x: pieceX,
             y: bodyBase + moduleBase + yStart,
             z: backAt(xc) - HDF_THICKNESS,
             w: pieceW,
@@ -1445,6 +1708,13 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
     hardware.push({
       name: `Lamello Cabineo ${config.cabineoSize}`,
       qty: cabineoJoints * CABINEOS_PER_JOINT,
+      unit: "stuks",
+    });
+  }
+  if (dividerCount > 0 && joinery === "dado") {
+    hardware.push({
+      name: "Spaanplaatschroef 4 × 40 mm (tussenschotten, van onderaf door de plank)",
+      qty: dividerCount * DIVIDER_SCREWS_PER_JOINT,
       unit: "stuks",
     });
   }
