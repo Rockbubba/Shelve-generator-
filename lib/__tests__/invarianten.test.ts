@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CabinetConfig, DEFAULT_CONFIG, depthOption, SHEET_LENGTH, SHEET_MARGIN, SHEET_WIDTH, KERF } from "../config";
+import { CabinetConfig, DEFAULT_CONFIG, depthOption, SHEET_LENGTH, SHEET_MARGIN, SHEET_WIDTH, KERF, MIN_SUBCELL_WIDTH } from "../config";
 import { buildCabinetModel } from "../model";
 import { nestPanels } from "../nesting";
 import { placementContour, placementOps, sheetToDxf } from "../dxf";
@@ -24,6 +24,11 @@ const CASES: [string, Partial<CabinetConfig>][] = [
   ["kolomoffsets", { columnOffsets: { "1": 80, "3": -60 } }],
   ["weggelaten", { omittedShelves: { "0:1:2": true, "0:2:3": true } }],
   ["hoog 3000", { height: 3000 }],
+  ["schotten dado", { dividers: { "0:1:1": 2, "0:2:3": 1, "0:0:0": 3 } }],
+  ["schotten cabineo", { joinery: "cabineo", dividers: { "0:1:1": 2, "0:3:4": 1 } }],
+  ["schotten + taper + led", { backTaper: { left: 200, right: 0 }, led: { enabled: true, side: "links", inbouw: true }, dividers: { "0:1:2": 1, "0:2:2": 2 } }],
+  ["schotten verschoven", { dividers: { "0:1:1": 2 }, dividerOffsets: { "0:1:1:0": -80, "0:1:1:1": 60 } }],
+  ["schotten in samengevoegd vak", { omittedShelves: { "0:2:2": true }, dividers: { "0:2:1": 2 } }],
   ["alles", { height: 2600, backTaper: { left: 180, right: 40 }, base: "plint", wallSkirting: { height: 110, depth: 18 },
     frontProfile: { type: "golf", amplitude: 50, periodes: 2, mirror: true }, led: { enabled: true, side: "rechts", inbouw: true },
     columnOffsets: { "1": 50 }, omittedShelves: { "0:2:2": true }, cellFills: { "0:0:1": "deur" }, joinery: "cabineo" }],
@@ -168,6 +173,27 @@ describe("sweep: geometrische invarianten", () => {
           const sepX = a.x + a.w <= b.x + 0.01 || b.x + b.w <= a.x + 0.01;
           const sepY = a.y + a.h <= b.y + 0.01 || b.y + b.h <= a.y + 0.01;
           expect(sepX || sepY, `${a.key} overlapt ${b.key}`).toBe(true);
+        }
+      }
+    });
+
+    it(`${naam}: tussenschotten staan in hun vak en houden deelvakken breed genoeg`, () => {
+      const t = cfg.thickness;
+      for (const cell of m.cells) {
+        const inCell = m.panels
+          .filter((p) => p.type === "schot" && p.dividerKey?.startsWith(`div:${cell.key}:`))
+          .sort((a, b) => a.place.x - b.place.x);
+        let prevRight = cell.x;
+        for (const d of inCell) {
+          expect(d.place.x, `${d.id} links van zijn vak`).toBeGreaterThanOrEqual(cell.x - 0.01);
+          expect(d.place.x + t, `${d.id} rechts van zijn vak`).toBeLessThanOrEqual(cell.x + cell.w + 0.01);
+          expect(d.place.y, `${d.id} onder zijn vak`).toBeGreaterThanOrEqual(cell.y - 0.01);
+          expect(d.place.y + d.place.h, `${d.id} steekt boven zijn vak uit`).toBeLessThanOrEqual(cell.y + cell.h + 7.01);
+          expect(d.place.x - prevRight, `${d.id} deelvak te smal`).toBeGreaterThanOrEqual(MIN_SUBCELL_WIDTH - 0.01);
+          prevRight = d.place.x + t;
+        }
+        if (inCell.length > 0) {
+          expect(cell.x + cell.w - prevRight, `laatste deelvak in ${cell.key} te smal`).toBeGreaterThanOrEqual(MIN_SUBCELL_WIDTH - 0.01);
         }
       }
     });

@@ -114,6 +114,18 @@ export const MIN_HEIGHT = 300;
 export const MAX_HEIGHT = 4000;
 export const MIN_CELL_WIDTH = 150;
 export const MIN_CELL_HEIGHT = 120;
+// Tussenschotten: verticale schotten binnen één vak.
+export const MIN_SUBCELL_WIDTH = 100; // minimale breedte van een deelvak
+export const MAX_DIVIDERS_PER_CELL = 8;
+export const DIVIDER_SCREW_DIAMETER = 4.5; // doorvoer voor 4 × 40 schroef (dado-kast, onderzijde)
+export const DIVIDER_SCREWS_PER_JOINT = 2;
+
+/** Maximaal aantal tussenschotten in een opening van `width` mm. */
+export function maxDividersForWidth(width: number, thickness: number): number {
+  // (n + 1) deelvakken van MIN_SUBCELL_WIDTH plus n schotten passen in width.
+  const n = Math.floor((width - MIN_SUBCELL_WIDTH) / (MIN_SUBCELL_WIDTH + thickness));
+  return Math.max(0, Math.min(MAX_DIVIDERS_PER_CELL, n));
+}
 
 // Breedte-snapping: maximale stille aanpassing van de gevraagde kastbreedte.
 export const WIDTH_SNAP_TOLERANCE = 12;
@@ -312,6 +324,17 @@ export interface CabinetConfig {
    * kolombreedtes; het model begrenst op MIN_CELL_WIDTH.
    */
   columnOffsets: Record<string, number>;
+  /**
+   * Aantal verticale tussenschotten per vak, key = cellKey (`m:c:row`, met
+   * row de onderste rij van het vak). Gelijk verdeeld over de vakbreedte;
+   * het model begrenst op MIN_SUBCELL_WIDTH per deelvak.
+   */
+  dividers: Record<string, number>;
+  /**
+   * Horizontale verschuiving (mm, + = rechts) van schot k in een vak,
+   * key = `${cellKey}:${k}`.
+   */
+  dividerOffsets: Record<string, number>;
   /** Rug per vak (toggle in 3D) of één volledig dichte achterwand. */
   rugMode: RugMode;
   frontProfile: FrontProfile;
@@ -350,6 +373,8 @@ export const DEFAULT_CONFIG: CabinetConfig = {
   omittedShelves: {},
   shelfOffsets: {},
   columnOffsets: {},
+  dividers: {},
+  dividerOffsets: {},
   rugMode: "per-vak",
   frontProfile: { type: "recht", amplitude: 60, periodes: 2, mirror: false },
   backTaper: { left: 0, right: 0 },
@@ -394,6 +419,11 @@ export function cellKey(module: number, col: number, row: number): string {
 
 export function shelfKey(module: number, col: number, level: number): string {
   return `${module}:${col}:${level}`;
+}
+
+/** Sleutel van tussenschot k in een vak. */
+export function dividerKey(cellKey: string, k: number): string {
+  return `${cellKey}:${k}`;
 }
 
 export function formatMm(v: number): string {

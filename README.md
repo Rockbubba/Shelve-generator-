@@ -250,6 +250,21 @@ boringen op de juiste plek zitten.
   werkelijke kabellengte uit die route.
 - **Betonplex** als materiaal (12/15/18/21 mm), filmbekleed dus nerfloos:
   onderdelen mogen gedraaid genest worden.
+- **Tussenschotten** (`dividers`, `dividerOffsets`): verticale schotten
+  binnen één vak, per vak een aantal (tik in de indelingseditor in een leeg
+  vak) en per schot verschuifbaar (slepen, of via de positie-stepper; ook in
+  3D aantikbaar). Ze worden gelijk verdeeld en begrensd zodat elk deelvak
+  minimaal 100 mm breed blijft. Een schot heeft de hoogte van het vak en de
+  diepte van de kast op die plek (verloop en profiel volgen mee) en wordt
+  éénzijdig gefreesd: bij Cabineo pockets in het schot met blinde
+  boutgaten in de onderzijde van de plank erboven en doorlopende boutgaten
+  in de plank eronder; bij blinde dado een dado (7 mm, stopt 30 mm vóór de
+  voorzijde) in de onderzijde van de plank erboven — het schot steekt daar
+  7 mm in en krijgt de bijbehorende inkeping aan de voorhoek — en twee
+  schroeven 4 × 40 van onderaf door de plank eronder (`BOOR_4_5MM_DOOR`).
+  Bij LED-verlichting krijgt elk schot een Ø10-doorvoer zodat de strip van
+  het vak in delen kan worden doorgelust. Onderdeelnummers `T1…`, in de BOM
+  als "Tussenschot".
 - **Plint**: 80 mm hoog tussen de buitenste staanders; standaard 40 mm
   teruggelegd t.o.v. het ondiepste punt van de voorkant, maar ook vlak met
   de voorkant of op een eigen maat (0–150 mm) te zetten. De plint loopt in

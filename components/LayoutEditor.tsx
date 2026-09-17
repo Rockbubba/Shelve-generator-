@@ -4,8 +4,10 @@
  * Compacte vooraanzicht-editor voor de vakindeling: kolommen en planken als
  * schema. Tik op een tussenplank om hem te selecteren, sleep hem omhoog/
  * omlaag (snapt op 10 mm) om de vakhoogtes per kolom te veranderen.
- * Weggelaten planken staan gestippeld; tikken zet ze terug (via de
- * bovenliggende handler die de sleutel herkent).
+ * Binnenstaanders en tussenschotten slepen horizontaal. Tik in een leeg vak
+ * om het te selecteren (tussenschotten toevoegen). Weggelaten planken staan
+ * gestippeld; tikken zet ze terug (via de bovenliggende handler die de
+ * sleutel herkent).
  */
 
 import { useRef, useState } from "react";
@@ -15,19 +17,24 @@ export default function LayoutEditor({
   model,
   offsets,
   columnOffsets,
+  dividerOffsets,
   selected,
   onSelect,
   onOffsetChange,
   onColumnOffsetChange,
+  onDividerOffsetChange,
   onRestore,
 }: {
   model: CabinetModel;
   offsets: Record<string, number>;
   columnOffsets: Record<string, number>;
+  dividerOffsets: Record<string, number>;
   selected: string | null;
   onSelect: (key: string | null) => void;
   onOffsetChange: (key: string, offset: number) => void;
   onColumnOffsetChange: (index: number, offset: number) => void;
+  /** key zonder `div:`-prefix (= cellKey:k). */
+  onDividerOffsetChange: (key: string, offset: number) => void;
   onRestore?: (key: string) => void;
 }) {
   const W = model.snappedWidth;
@@ -35,7 +42,7 @@ export default function LayoutEditor({
   const svgRef = useRef<SVGSVGElement>(null);
   const drag = useRef<{
     key: string;
-    axis: "y" | "x";
+    kind: "shelf" | "col" | "div";
     startPx: number;
     startOffset: number;
   } | null>(null);
@@ -49,6 +56,7 @@ export default function LayoutEditor({
 
   const staanders = model.panels.filter((p) => p.type === "staander");
   const planken = model.panels.filter((p) => p.type === "plank");
+  const schotten = model.panels.filter((p) => p.type === "schot");
 
   return (
     <svg
@@ -60,15 +68,22 @@ export default function LayoutEditor({
       aria-label="Vakindeling vooraanzicht"
       onPointerMove={(e) => {
         if (!drag.current) return;
-        if (drag.current.axis === "y") {
+        if (drag.current.kind === "shelf") {
           const dyMm = -(e.clientY - drag.current.startPx) * mmPerPx("y");
           const snapped = Math.round(dyMm / 10) * 10;
           onOffsetChange(drag.current.key, drag.current.startOffset + snapped);
-        } else {
-          const dxMm = (e.clientX - drag.current.startPx) * mmPerPx("x");
-          const snapped = Math.round(dxMm / 10) * 10;
+          return;
+        }
+        const dxMm = (e.clientX - drag.current.startPx) * mmPerPx("x");
+        const snapped = Math.round(dxMm / 10) * 10;
+        if (drag.current.kind === "col") {
           onColumnOffsetChange(
             Number(drag.current.key.replace("col:", "")),
+            drag.current.startOffset + snapped,
+          );
+        } else {
+          onDividerOffsetChange(
+            drag.current.key.replace("div:", ""),
             drag.current.startOffset + snapped,
           );
         }
@@ -82,6 +97,28 @@ export default function LayoutEditor({
         setDragging(false);
       }}
     >
+      {/* Vakken: onzichtbaar tikvlak, gemarkeerd als geselecteerd. */}
+      {model.cells.map((c) => {
+        const key = `cell:${c.key}`;
+        const isSel = key === selected;
+        return (
+          <rect
+            key={key}
+            x={c.x}
+            y={H - (c.y + c.h)}
+            width={c.w}
+            height={c.h}
+            fill={isSel ? "#dbeafe" : "transparent"}
+            stroke={isSel ? "#2563eb" : "none"}
+            strokeWidth={4}
+            style={{ cursor: "pointer" }}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              onSelect(isSel ? null : key);
+            }}
+          />
+        );
+      })}
       {staanders.map((s) => {
         const movable = Boolean(s.staanderKey);
         const isSel = movable && s.staanderKey === selected;
@@ -102,7 +139,7 @@ export default function LayoutEditor({
               const idx = s.staanderKey.replace("col:", "");
               drag.current = {
                 key: s.staanderKey,
-                axis: "x",
+                kind: "col",
                 startPx: e.clientX,
                 startOffset: columnOffsets[idx] ?? 0,
               };
@@ -130,9 +167,36 @@ export default function LayoutEditor({
               onSelect(p.shelfKey);
               drag.current = {
                 key: p.shelfKey,
-                axis: "y",
+                kind: "shelf",
                 startPx: e.clientY,
                 startOffset: offsets[p.shelfKey] ?? 0,
+              };
+              setDragging(true);
+            }}
+          />
+        );
+      })}
+      {schotten.map((d) => {
+        const isSel = d.dividerKey === selected;
+        const raw = d.dividerKey!.replace("div:", "");
+        return (
+          <rect
+            key={d.id}
+            x={d.place.x}
+            y={H - (d.place.y + d.place.h)}
+            width={Math.max(d.place.w, 14)}
+            height={d.place.h}
+            fill={isSel ? "#2563eb" : "#8b5cf6"}
+            style={{ cursor: dragging ? "grabbing" : "ew-resize" }}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              (e.currentTarget as SVGRectElement).setPointerCapture?.(e.pointerId);
+              onSelect(d.dividerKey!);
+              drag.current = {
+                key: d.dividerKey!,
+                kind: "div",
+                startPx: e.clientX,
+                startOffset: dividerOffsets[raw] ?? 0,
               };
               setDragging(true);
             }}
