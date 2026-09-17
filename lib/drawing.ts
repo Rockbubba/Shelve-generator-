@@ -9,7 +9,7 @@
  * print/PDF) of DXF (CAD).
  */
 
-import { PLINTH_HEIGHT, materialById } from "./config";
+import { materialById } from "./config";
 import { DxfBuilder } from "./dxf";
 import { CabinetModel, Panel } from "./model";
 
@@ -556,13 +556,13 @@ function drawFrame(b: DrawingBuilder, model: CabinetModel, L: Layout, opts: Draw
   const mat = materialById(cfg.materialId);
   const rug =
     cfg.rugMode === "volledig"
-      ? "volledige achterwand HDF 4 mm"
+      ? `volledige achterwand HDF ${fmtMm(cfg.hdfThickness)} mm`
       : model.panels.some((p) => p.type === "rug")
-        ? `rug HDF 4 mm (${cfg.rugMount})`
+        ? `rug HDF ${fmtMm(cfg.hdfThickness)} mm (${cfg.rugMount})`
         : "geen rug";
   const base =
     cfg.base === "plint"
-      ? `plint ${PLINTH_HEIGHT} mm, ${cfg.plinthSetback} mm terug`
+      ? `plint ${fmtMm(model.panels.find((p) => p.type === "plint")?.place.h ?? cfg.plinthHeight)} mm, ${cfg.plinthSetback} mm terug`
       : cfg.base === "pootjes"
         ? `pootjes ${cfg.feet.height} mm (${cfg.feet.type})`
         : "geen onderbouw";

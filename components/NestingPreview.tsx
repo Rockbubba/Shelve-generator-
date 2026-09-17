@@ -161,7 +161,7 @@ export default function NestingPreview({
 }) {
   const all = [
     ...nesting.sheets.map((s) => ({ sheet: s, label: `Plaat ${s.index + 1} — 18 mm` })),
-    ...nesting.hdfSheets.map((s) => ({ sheet: s, label: `HDF ${s.index + 1} — 4 mm` })),
+    ...nesting.hdfSheets.map((s) => ({ sheet: s, label: `HDF ${s.index + 1} — ${s.placements[0]?.panel.thickness ?? 4} mm` })),
   ];
   if (all.length === 0) {
     return <p className="text-sm text-neutral-500">Geen platen te nesten.</p>;

@@ -87,7 +87,7 @@ breedtesnapping blijven op de standaardplaat (2440 × 1220) gebaseerd.
 
 ### Schrankstabiliteit
 
-- Rugpanelen: 4 mm HDF per vak in een gefreesde groef
+- Rugpanelen: HDF (dikte instelbaar, standaard 4 mm) per vak, geschroefd of in een gefreesde groef
   (`RUG_SPONNING`: 4 mm breed, 10 mm diep, 12 mm uit de achterkant).
   De generator stelt automatisch hoekvakken + de onderste rij voor;
   per vak te togglen door in de 3D-preview op het vak te tikken.
@@ -110,7 +110,7 @@ DXF-formaat (VCarve, Fusion, Illustrator) — lagen gescheiden per bewerking:
 | `BOOR_5MM_D8` | Cabineo-boutgaten Ø5, blind 8 mm (buitenstaanders) |
 | `BOOR_15MM_D11` | Cabineo plaatsing via boren: 3 × Ø15, 11 mm diep |
 | `CABINEO_11MM` | Cabineo-pocketcontour (3 × Ø15-klaverblad), 11 mm diep |
-| `RUG_SPONNING` | groef 4 mm breed, 10 mm diep |
+| `RUG_SPONNING` | groef op rugdikte (standaard 4 mm) breed, 10 mm diep |
 | `GRAVURE` | onderdeel-ID's, 0,5 mm diep |
 | `PLAATRAND` | referentie, niet frezen |
 
@@ -220,7 +220,7 @@ boringen op de juiste plek zitten.
   begrenst op 150 mm vakbreedte. Voorkantprofiel en verloop achter worden
   op de werkelijke staanderposities geëvalueerd.
 - **Volledig dichte achterwand**: optie "Rug → Volledig dicht". De hele
-  achterzijde wordt met 4 mm HDF gesloten, per module opgedeeld in stukken
+  achterzijde wordt met HDF gesloten, per module opgedeeld in stukken
   die op de HDF-plaat passen (≤ 1200 mm breed) met de naden achter
   staanderharten; boven een muurplint begint de wand pas boven de plint.
   Altijd geschroefd; alle vakken tellen als rug voor de stabiliteit. Tegen
@@ -303,7 +303,9 @@ boringen op de juiste plek zitten.
   deelpanelen daarin. Onderdeelnummers `T1…`, in de BOM als "Tussenschot".
 - **Plint**: 80 mm hoog tussen de buitenste staanders; standaard 40 mm
   teruggelegd t.o.v. het ondiepste punt van de voorkant, maar ook vlak met
-  de voorkant of op een eigen maat (0–150 mm) te zetten. De plint loopt in
+  de voorkant of op een eigen maat (0–150 mm) te zetten; de plinthoogte is
+  instelbaar (40–200 mm, standaard 80) en de romp erboven wordt navenant
+  korter. De plint loopt in
   één stuk door, dus elke binnenstaander krijgt voor-onder een inkeping tot
   het achtervlak van de plint (onderdeel van de buitencontour, dus geen
   aparte bewerking). De buitenste staanders houden hun volle diepte en de

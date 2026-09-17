@@ -37,6 +37,8 @@ import {
   shelfKey,
   HDF_SHEET_WIDTH,
   HDF_THICKNESS,
+  MIN_HDF_THICKNESS,
+  MAX_HDF_THICKNESS,
   KERF,
   SHEET_MARGIN,
   MAX_MODULE_HEIGHT,
@@ -49,11 +51,12 @@ import {
   maxDividersForWidth,
   dividerKey,
   PLINTH_HEIGHT,
+  MIN_PLINTH_HEIGHT,
+  MAX_PLINTH_HEIGHT,
   PLINTH_SETBACK,
   RUG_CLEARANCE,
   RUG_GROOVE_BACK_OFFSET,
   RUG_GROOVE_DEPTH,
-  RUG_GROOVE_WIDTH,
   RUG_SCREWS_PER_PANEL,
   LED_GROOVE_WIDTH,
   LED_GROOVE_DEPTH,
@@ -586,6 +589,14 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
   let hingeCount = 0;
   let wideDoorWarned = false;
   let plinthFootWarned = false;
+  // Rugdikte (HDF) begrensd; de sponning is precies zo breed.
+  const hdfT = Math.min(MAX_HDF_THICKNESS, Math.max(MIN_HDF_THICKNESS, config.hdfThickness ?? HDF_THICKNESS));
+  const grooveW = hdfT;
+  // Plinthoogte begrensd; standaard PLINTH_HEIGHT.
+  const plinthHeight = Math.min(
+    MAX_PLINTH_HEIGHT,
+    Math.max(MIN_PLINTH_HEIGHT, config.plinthHeight ?? PLINTH_HEIGHT),
+  );
   /** Totale LED-striplengte (mm) over alle vakken. */
   let ledStripMm = 0;
   let dowelJoints = 0;
@@ -599,7 +610,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
   let moduleBase = 0;
   for (let m = 0; m < moduleCount; m++) {
     const Hm = moduleHeights[m];
-    const plinthOffset = m === 0 && config.base === "plint" ? PLINTH_HEIGHT : 0;
+    const plinthOffset = m === 0 && config.base === "plint" ? plinthHeight : 0;
 
     // Plankniveaus binnen de module: onderste + tussenliggende + bovenste.
     // levelY[j] = onderkant van plank j (j = 0..rows), module-lokaal.
@@ -907,9 +918,9 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
               layer: "RUG_SPONNING",
               side,
               x: cell.y - RUG_GROOVE_DEPTH,
-              y: lz(gBack) + RUG_GROOVE_BACK_OFFSET - RUG_GROOVE_WIDTH / 2,
+              y: lz(gBack) + RUG_GROOVE_BACK_OFFSET - grooveW / 2,
               w: cell.h + 2 * RUG_GROOVE_DEPTH,
-              h: RUG_GROOVE_WIDTH,
+              h: grooveW,
               depth: RUG_GROOVE_DEPTH,
             });
           }
@@ -971,7 +982,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
       // volle diepte naast.
       const skirtNotch = m === 0 && skirtDepth > 0;
       const plinthNotch = hasPlinth && m === 0 && i > 0 && i < columns;
-      const plinthNotchH = Math.min(PLINTH_HEIGHT, Hm - t);
+      const plinthNotchH = Math.min(plinthHeight, Hm - t);
       const vPlinthBack = round1(Math.max(0, plinthBackZ - bi));
       let contour: [number, number][] | undefined;
       if (skirtNotch || plinthNotch) {
@@ -1250,7 +1261,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
             [rugBelow, "B"],
           ] as [boolean, Side][]) {
             if (!has) continue;
-            const g0 = RUG_GROOVE_BACK_OFFSET - RUG_GROOVE_WIDTH / 2;
+            const g0 = RUG_GROOVE_BACK_OFFSET - grooveW / 2;
             const yL = lz(gBackL) + g0;
             const yR = lz(gBackR) + g0;
             if (Math.abs(yL - yR) < 0.01) {
@@ -1261,7 +1272,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
                 x: 0,
                 y: yL,
                 w: shelfLen,
-                h: RUG_GROOVE_WIDTH,
+                h: grooveW,
                 depth: RUG_GROOVE_DEPTH,
               });
             } else {
@@ -1272,8 +1283,8 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
                 points: [
                   [0, yL],
                   [shelfLen, yR],
-                  [shelfLen, yR + RUG_GROOVE_WIDTH],
-                  [0, yL + RUG_GROOVE_WIDTH],
+                  [shelfLen, yR + grooveW],
+                  [0, yL + grooveW],
                 ],
                 depth: RUG_GROOVE_DEPTH,
               });
@@ -1437,9 +1448,9 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
               layer: "RUG_SPONNING",
               side,
               x: 0,
-              y: round1(RUG_GROOVE_BACK_OFFSET - RUG_GROOVE_WIDTH / 2),
+              y: round1(RUG_GROOVE_BACK_OFFSET - grooveW / 2),
               w: Ld,
-              h: RUG_GROOVE_WIDTH,
+              h: grooveW,
               depth: RUG_GROOVE_DEPTH,
             });
           }
@@ -1583,7 +1594,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
             material: "hdf4",
             length: Math.max(rw, rh),
             width: Math.min(rw, rh),
-            thickness: HDF_THICKNESS,
+            thickness: hdfT,
             ops: [engrave(id, Math.max(rw, rh), Math.min(rw, rh), "A")],
             notches: [],
             machineSide: "A",
@@ -1594,11 +1605,11 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
               x: round1(centreX - rw / 2),
               y: bodyBase + moduleBase + cell.y - rugOversize,
               z: sponning
-                ? gBack + RUG_GROOVE_BACK_OFFSET - HDF_THICKNESS / 2
-                : gBack - HDF_THICKNESS,
+                ? gBack + RUG_GROOVE_BACK_OFFSET - hdfT / 2
+                : gBack - hdfT,
               w: rw,
               h: rh,
-              d: HDF_THICKNESS,
+              d: hdfT,
             },
             module: m,
           });
@@ -1642,7 +1653,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
           material: "hdf4",
           length: Math.max(pieceW, pieceH),
           width: Math.min(pieceW, pieceH),
-          thickness: HDF_THICKNESS,
+          thickness: hdfT,
           ops: [engrave(id, Math.max(pieceW, pieceH), Math.min(pieceW, pieceH), "A")],
           notches: [],
           machineSide: "A",
@@ -1650,10 +1661,10 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
           place: {
             x: pieceX,
             y: bodyBase + moduleBase + yStart,
-            z: backAt(xc) - HDF_THICKNESS,
+            z: backAt(xc) - hdfT,
             w: pieceW,
             h: pieceH,
-            d: HDF_THICKNESS,
+            d: hdfT,
           },
           module: m,
         });
@@ -1690,9 +1701,9 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
       type: "plint",
       material: "plaat18",
       length: plintLen,
-      width: PLINTH_HEIGHT,
+      width: plinthHeight,
       thickness: t,
-      ops: [engrave("PL1", plintLen, PLINTH_HEIGHT, "A")],
+      ops: [engrave("PL1", plintLen, plinthHeight, "A")],
       notches: [],
       machineSide: "A",
       place: {
@@ -1700,7 +1711,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
         y: 0,
         z: plinthBackZ,
         w: plintLen,
-        h: PLINTH_HEIGHT,
+        h: plinthHeight,
         d: t,
       },
       module: 0,
@@ -1754,7 +1765,9 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
   const rugPanels = panels.filter((p) => p.type === "rug");
   if (rugPanels.length > 0) {
     hardware.push({
-      name: fullBack ? "HDF achterwand 4 mm (in stukken, naden achter staanders)" : "HDF rugpaneel 4 mm (gefreesd)",
+      name: fullBack
+        ? `HDF achterwand ${hdfT} mm (in stukken, naden achter staanders)`
+        : `HDF rugpaneel ${hdfT} mm (gefreesd)`,
       qty: rugPanels.length,
       unit: "stuks",
     });
