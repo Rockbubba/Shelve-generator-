@@ -11,7 +11,7 @@
  * Alles is per browser/apparaat; er is geen backend.
  */
 
-import { CabinetConfig, DEFAULT_CONFIG } from "./config";
+import { CabinetConfig, DEFAULT_CONFIG, StockSheet } from "./config";
 
 const DRAFT_KEY = "boekenkast-concept";
 const DESIGNS_KEY = "boekenkast-ontwerpen";
@@ -53,7 +53,29 @@ export function normalizeConfig(raw: unknown): CabinetConfig {
     wallSkirting: obj(DEFAULT_CONFIG.wallSkirting, r.wallSkirting),
     feet: obj(DEFAULT_CONFIG.feet, r.feet),
     led: obj(DEFAULT_CONFIG.led, r.led),
+    sheetStock: {
+      plaat18: stockList(r.sheetStock?.plaat18, DEFAULT_CONFIG.sheetStock.plaat18),
+      hdf4: stockList(r.sheetStock?.hdf4, DEFAULT_CONFIG.sheetStock.hdf4),
+    },
   };
+}
+
+/** Alleen geldige voorraadregels (positieve maten, aantal ≥ 1 of null). */
+function stockList(raw: unknown, fallback: StockSheet[]): StockSheet[] {
+  if (!Array.isArray(raw)) return fallback;
+  const out: StockSheet[] = [];
+  for (const e of raw) {
+    if (!e || typeof e !== "object") continue;
+    const { length, width, qty, naam } = e as Partial<StockSheet>;
+    if (typeof length !== "number" || typeof width !== "number" || length <= 0 || width <= 0) continue;
+    out.push({
+      length,
+      width,
+      qty: typeof qty === "number" && qty >= 1 ? Math.floor(qty) : null,
+      ...(typeof naam === "string" && naam.trim() ? { naam: naam.trim() } : {}),
+    });
+  }
+  return out.length > 0 ? out : fallback;
 }
 
 function storage(): Storage | null {

@@ -52,6 +52,18 @@ preview mee (gedraaide onderdelen zijn met ↻ gemarkeerd). De preview tekent
 de stroken gestippeld mee. HDF-rugpanelen nesten apart op een eigen
 4mm-plaat.
 
+**Plaatvoorraad.** Onder *Materiaal* staat per materiaal (18 mm en HDF) een
+voorraadlijst: plaatmaat plus aantal. Aantal leeg = onbeperkt (de
+standaardplaat die je bijbestelt); regels met een aantal — restplaten van
+eerdere producties, al ingekochte platen, of een grotere plaatmaat — gebruikt
+de nesting eerst, in lijstvolgorde. Elke plaat heeft daarbij zijn eigen maat:
+een onderdeel dat niet op een restplaat past gaat door naar de volgende maat.
+Is de voorraad op en is er geen onbeperkte maat, dan komen de resterende
+onderdelen op "extra" platen van 2440 × 1220 met een melding hoeveel er
+bijbesteld moeten worden. Yield en platenteller rekenen met het werkelijke
+bruto-oppervlak van de gebruikte platen. De diepte-opties en de
+breedtesnapping blijven op de standaardplaat (2440 × 1220) gebaseerd.
+
 ### Constructie
 
 - Doorlopende staanders (H × D), planken ertussen.

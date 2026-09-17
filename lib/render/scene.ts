@@ -266,7 +266,8 @@ export class CabinetScene {
     const savedAspect = this.camera.aspect;
     const savedRatio = this.renderer.getPixelRatio();
     try {
-      const dist = (this.lastMaxDim || 1000) * 2.65;
+      // Vierkant beeld: dichter dan in de viewer, zodat de kast het vult.
+      const dist = (this.lastMaxDim || 1000) * 1.85;
       this.camera.position.copy(this.defaultDirection()).multiplyScalar(dist).add(this.controls.target);
       this.camera.lookAt(this.controls.target);
       this.camera.aspect = 1;
