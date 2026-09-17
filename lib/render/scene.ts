@@ -99,7 +99,13 @@ export class CabinetScene {
     duration: number;
     from: THREE.Spherical;
     to: THREE.Spherical;
+    fromTarget: THREE.Vector3;
+    toTarget: THREE.Vector3;
   } | null = null;
+  /** Kastmaten van het laatste model, voor het inkaderen van de camera. */
+  private dims = { W: 0, H: 0, D: 0 };
+  /** Heeft de gebruiker de camera zelf bewogen sinds het laatste inkaderen? */
+  private userMoved = false;
   private rafId = 0;
   private lastMaxDim = 0;
   private pointerDown: { x: number; y: number } | null = null;
@@ -229,6 +235,10 @@ export class CabinetScene {
       this.dampUntil = performance.now() + 700;
       this.requestRender();
     });
+    this.controls.addEventListener("start", () => {
+      this.userMoved = true;
+      this.viewAnim = null;
+    });
 
     this.renderer.domElement.addEventListener("pointerdown", (e) => {
       this.pointerDown = { x: e.clientX, y: e.clientY };
@@ -263,13 +273,15 @@ export class CabinetScene {
     const h = this.container.clientHeight;
     if (w === 0 || h === 0 || !this.cabinetGroup) return null;
     const savedPos = this.camera.position.clone();
+    const savedTarget = this.controls.target.clone();
     const savedAspect = this.camera.aspect;
     const savedRatio = this.renderer.getPixelRatio();
     try {
-      // Vierkant beeld: dichter dan in de viewer, zodat de kast het vult.
-      const dist = (this.lastMaxDim || 1000) * 1.85;
-      this.camera.position.copy(this.defaultDirection()).multiplyScalar(dist).add(this.controls.target);
-      this.camera.lookAt(this.controls.target);
+      // Vierkant beeld, kast gecentreerd en vullend.
+      const framed = this.frameFor(this.defaultDirection(), 1);
+      this.controls.target.copy(framed.target);
+      this.camera.position.copy(framed.position);
+      this.camera.lookAt(framed.target);
       this.camera.aspect = 1;
       this.camera.updateProjectionMatrix();
       this.renderer.setPixelRatio(1);
@@ -283,6 +295,7 @@ export class CabinetScene {
     } finally {
       this.renderer.setPixelRatio(savedRatio);
       this.renderer.setSize(w, h);
+      this.controls.target.copy(savedTarget);
       this.camera.position.copy(savedPos);
       this.camera.aspect = savedAspect;
       this.camera.updateProjectionMatrix();
@@ -410,29 +423,89 @@ export class CabinetScene {
    * blijft gelijk, zodat in- en uitzoomen bewaard blijft.
    */
   setView(view: ViewName, duration = 450) {
-    const target = this.controls.target;
-    const offset = this.camera.position.clone().sub(target);
-    const from = new THREE.Spherical().setFromVector3(offset);
     const dir = view === "standaard" ? this.defaultDirection() : VIEW_DIRECTIONS[view];
-    const to = new THREE.Spherical().setFromVector3(dir.clone().multiplyScalar(offset.length()));
+    const framed = this.frameFor(dir, this.camera.aspect);
+    const fromTarget = this.controls.target.clone();
+    const from = new THREE.Spherical().setFromVector3(this.camera.position.clone().sub(fromTarget));
+    const to = new THREE.Spherical().setFromVector3(framed.position.clone().sub(framed.target));
     to.makeSafe();
     // Kortste draai om de verticale as.
     let dTheta = to.theta - from.theta;
     dTheta = Math.atan2(Math.sin(dTheta), Math.cos(dTheta));
     to.theta = from.theta + dTheta;
+    this.userMoved = false;
     if (duration <= 0) {
-      this.applySpherical(to);
+      this.applySpherical(to, framed.target);
       this.viewAnim = null;
     } else {
-      this.viewAnim = { start: performance.now(), duration, from, to };
+      this.viewAnim = { start: performance.now(), duration, from, to, fromTarget, toTarget: framed.target };
     }
     this.requestRender();
   }
 
-  private applySpherical(sph: THREE.Spherical) {
-    const pos = new THREE.Vector3().setFromSpherical(sph).add(this.controls.target);
+  /**
+   * Camera-doel en -positie waarbij de kast, gezien uit richting `dir`,
+   * gecentreerd en passend in beeld staat. Het doel ligt niet simpelweg op
+   * het hart van de kast: in perspectief steekt de dichtstbijzijnde hoek
+   * verder uit, dus het geprojecteerde omhullende kader wordt gecentreerd.
+   */
+  private frameFor(dir: THREE.Vector3, aspect: number): { target: THREE.Vector3; position: THREE.Vector3 } {
+    const { W, H, D } = this.dims;
+    const maxDim = Math.max(W, H, D, 1);
+    const corners: THREE.Vector3[] = [];
+    for (const sx of [-1, 1]) for (const sy of [0, 1]) for (const sz of [-1, 1]) {
+      corners.push(new THREE.Vector3((sx * W) / 2, sy * H, (sz * D) / 2));
+    }
+    const target = new THREE.Vector3(0, H / 2, 0);
+    let dist = maxDim * 2.2;
+    const cam = new THREE.PerspectiveCamera(this.camera.fov, aspect || 1, 10, 30000);
+    const halfFov = THREE.MathUtils.degToRad(this.camera.fov / 2);
+    const right = new THREE.Vector3();
+    const up = new THREE.Vector3();
+    for (let iter = 0; iter < 4; iter++) {
+      cam.position.copy(dir).multiplyScalar(dist).add(target);
+      cam.lookAt(target);
+      cam.updateMatrixWorld(true);
+      cam.updateProjectionMatrix();
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (const c of corners) {
+        const p = c.clone().project(cam);
+        minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+        minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+      }
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2;
+      // Verschuif doel (en camera) zodat het kadermidden op het beeldmidden komt.
+      const halfH = dist * Math.tan(halfFov);
+      const halfW = halfH * cam.aspect;
+      right.setFromMatrixColumn(cam.matrixWorld, 0);
+      up.setFromMatrixColumn(cam.matrixWorld, 1);
+      target.addScaledVector(right, cx * halfW).addScaledVector(up, cy * halfH);
+      // Afstand zodat het kader ~82% van de krapste beeldas vult.
+      const extent = Math.max((maxX - minX) / 2, (maxY - minY) / 2);
+      if (extent > 0) dist *= extent / 0.82;
+    }
+    return { target, position: dir.clone().multiplyScalar(dist).add(target) };
+  }
+
+  /** Kader de kast opnieuw in vanuit de huidige kijkrichting (na resize). */
+  private reframe() {
+    if (this.dims.H === 0) return;
+    const dir = this.camera.position.clone().sub(this.controls.target).normalize();
+    if (dir.lengthSq() === 0) return;
+    const framed = this.frameFor(dir, this.camera.aspect);
+    this.controls.target.copy(framed.target);
+    this.camera.position.copy(framed.position);
+    this.camera.lookAt(framed.target);
+    this.controls.update();
+    this.requestRender();
+  }
+
+  private applySpherical(sph: THREE.Spherical, target: THREE.Vector3) {
+    this.controls.target.copy(target);
+    const pos = new THREE.Vector3().setFromSpherical(sph).add(target);
     this.camera.position.copy(pos);
-    this.camera.lookAt(this.controls.target);
+    this.camera.lookAt(target);
     this.controls.update();
   }
 
@@ -446,7 +519,7 @@ export class CabinetScene {
       a.from.phi + (a.to.phi - a.from.phi) * k,
       a.from.theta + (a.to.theta - a.from.theta) * k,
     );
-    this.applySpherical(sph);
+    this.applySpherical(sph, a.fromTarget.clone().lerp(a.toTarget, k));
     if (t >= 1) this.viewAnim = null;
     return true;
   }
@@ -734,13 +807,20 @@ export class CabinetScene {
     // Lichtafstand meeschalen zodat de zon altijd buiten de kast staat.
     this.dirLight.position.set(-0.45 * maxDim - 300, 1.3 * maxDim + 800, -0.95 * maxDim - 600);
 
+    this.dims = { W, H, D };
     if (Math.abs(maxDim - this.lastMaxDim) / (this.lastMaxDim || 1) > 0.2) {
-      const dist = maxDim * 2.65;
-      this.controls.target.set(0, H / 2, 0);
-      this.camera.position.copy(this.defaultDirection()).multiplyScalar(dist).add(this.controls.target);
+      // Nieuwe (of sterk gewijzigde) kast: standaardaanzicht, gecentreerd.
+      const framed = this.frameFor(this.defaultDirection(), this.camera.aspect);
+      this.controls.target.copy(framed.target);
+      this.camera.position.copy(framed.position);
+      this.camera.lookAt(framed.target);
       this.controls.update();
       this.viewAnim = null;
+      this.userMoved = false;
       this.lastMaxDim = maxDim;
+    } else if (!this.userMoved && !this.viewAnim) {
+      // Kleine maatwijziging zonder eigen camerabeweging: netjes gecentreerd houden.
+      this.reframe();
     }
 
     this.requestRender();
@@ -757,6 +837,7 @@ export class CabinetScene {
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    if (!this.userMoved && !this.viewAnim) this.reframe();
     this.requestRender();
   }
 

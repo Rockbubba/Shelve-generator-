@@ -99,8 +99,10 @@ export async function printDrawing(model: CabinetModel, opts: DrawingOptions = {
 <style>
   @page { size: A3 landscape; margin: 0; }
   html, body { margin: 0; padding: 0; background: #e5e7eb; }
-  svg { display: block; width: 420mm; height: 297mm; background: #fff; margin: 0 auto; box-shadow: 0 2px 12px rgba(0,0,0,.15); }
-  @media print { body { background: #fff; } svg { box-shadow: none; } }
+  body { display: flex; min-height: 100vh; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; }
+  /* Op scherm passend in het venster en gecentreerd; bij printen exact A3. */
+  svg { display: block; width: min(420mm, 100%); max-height: calc(100vh - 32px); height: auto; background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,.15); }
+  @media print { body { display: block; padding: 0; background: #fff; } svg { width: 420mm; height: 297mm; max-height: none; box-shadow: none; } }
 </style></head><body>${svg}</body></html>`);
   win.document.close();
   // Even wachten tot de SVG (en de ingesloten afbeelding) staat.
