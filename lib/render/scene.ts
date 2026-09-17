@@ -53,6 +53,15 @@ const CUBE_FACE_LABELS: Record<Exclude<ViewName, "standaard">, string> = {
   onder: "Onder",
 };
 
+/** Alle levende scenes; de zichtbare (met afmeting) levert de snapshot. */
+const liveScenes = new Set<CabinetScene>();
+
+/** De scene die op dit moment zichtbaar is (mobiel of desktop), of null. */
+export function activeScene(): CabinetScene | null {
+  for (const s of liveScenes) if (s.isVisible()) return s;
+  return null;
+}
+
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
 export class CabinetScene {
@@ -236,7 +245,50 @@ export class CabinetScene {
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
     this.resize();
+    liveScenes.add(this);
     this.tick();
+  }
+
+  isVisible(): boolean {
+    return !this.disposed && this.container.clientWidth > 0 && this.container.clientHeight > 0;
+  }
+
+  /**
+   * PNG (data-URL, transparante achtergrond) van de kast vanuit het
+   * standaardaanzicht, vierkant `px` × `px`, zonder aanzichtenkubus. De
+   * viewer wordt daarna weer in zijn oude staat gerenderd.
+   */
+  snapshot(px = 800): string | null {
+    const w = this.container.clientWidth;
+    const h = this.container.clientHeight;
+    if (w === 0 || h === 0 || !this.cabinetGroup) return null;
+    const savedPos = this.camera.position.clone();
+    const savedAspect = this.camera.aspect;
+    const savedRatio = this.renderer.getPixelRatio();
+    try {
+      const dist = (this.lastMaxDim || 1000) * 2.65;
+      this.camera.position.copy(this.defaultDirection()).multiplyScalar(dist).add(this.controls.target);
+      this.camera.lookAt(this.controls.target);
+      this.camera.aspect = 1;
+      this.camera.updateProjectionMatrix();
+      this.renderer.setPixelRatio(1);
+      this.renderer.setSize(px, px, false);
+      this.renderer.setViewport(0, 0, px, px);
+      this.renderer.clear();
+      this.renderer.render(this.scene, this.camera);
+      return this.renderer.domElement.toDataURL("image/png");
+    } catch {
+      return null;
+    } finally {
+      this.renderer.setPixelRatio(savedRatio);
+      this.renderer.setSize(w, h);
+      this.camera.position.copy(savedPos);
+      this.camera.aspect = savedAspect;
+      this.camera.updateProjectionMatrix();
+      this.camera.lookAt(this.controls.target);
+      this.controls.update();
+      this.requestRender();
+    }
   }
 
   private handleTap(e: PointerEvent) {
@@ -724,6 +776,7 @@ export class CabinetScene {
 
   dispose() {
     this.disposed = true;
+    liveScenes.delete(this);
     cancelAnimationFrame(this.rafId);
     this.resizeObserver.disconnect();
     this.controls.dispose();

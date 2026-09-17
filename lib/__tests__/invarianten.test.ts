@@ -3,6 +3,7 @@ import { CabinetConfig, DEFAULT_CONFIG, depthOption, SHEET_LENGTH, SHEET_MARGIN,
 import { buildCabinetModel } from "../model";
 import { nestPanels } from "../nesting";
 import { placementContour, placementOps, sheetToDxf } from "../dxf";
+import { buildDrawing, drawingToDxf, drawingToSvg, PAPER } from "../drawing";
 
 const B: CabinetConfig = { ...DEFAULT_CONFIG, depth: depthOption(3), width: 1800, height: 2000, columns: 4, rows: 5, base: "geen", cellFills: {} };
 
@@ -38,6 +39,23 @@ describe("sweep: geometrische invarianten", () => {
   for (const [naam, patch] of CASES) {
     const cfg = { ...B, ...patch };
     const m = buildCabinetModel(cfg);
+
+    it(`${naam}: werktekening past in het kader en is geldig`, () => {
+      const d = buildDrawing(m);
+      const lo = PAPER.margin - 0.01;
+      for (const p of d.polys) {
+        for (const [x, y] of p.points) {
+          expect(Number.isFinite(x) && Number.isFinite(y)).toBe(true);
+          expect(x).toBeGreaterThanOrEqual(lo);
+          expect(x).toBeLessThanOrEqual(PAPER.width - lo);
+          expect(y).toBeGreaterThanOrEqual(lo);
+          expect(y).toBeLessThanOrEqual(PAPER.height - lo);
+        }
+      }
+      expect(d.views).toHaveLength(3);
+      expect(drawingToSvg(d)).not.toContain("NaN");
+      expect(drawingToDxf(d)).not.toContain("NaN");
+    });
 
     it(`${naam}: panelen hebben positieve maten`, () => {
       for (const p of m.panels) {

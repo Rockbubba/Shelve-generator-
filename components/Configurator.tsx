@@ -32,10 +32,14 @@ import { nestPanels } from "@/lib/nesting";
 import {
   downloadAllDxfZip,
   downloadBomCsv,
+  downloadDrawingDxf,
+  downloadDrawingSvg,
+  printDrawing,
   downloadSheetDxf,
 } from "@/lib/export";
 import { buildBom, typeLabel } from "@/lib/bom";
 import Viewer3D from "./Viewer3D";
+import { activeScene } from "@/lib/render/scene";
 import BottomSheet, { SheetSnap } from "./BottomSheet";
 import NestingPreview from "./NestingPreview";
 import BomView from "./BomView";
@@ -1051,6 +1055,36 @@ export default function Configurator() {
             >
               Print / PDF onderdelenlijst
             </button>
+          </div>
+          <div>
+            <h3 className="mb-1 text-sm font-semibold">Werktekening</h3>
+            <p className="mb-2 text-xs text-neutral-500">
+              Complete kast met voor-, zij- en bovenaanzicht, bemaat, op A3 (Europese
+              projectie). PDF via de printdialoog van de browser.
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                className="btn-touch rounded-xl bg-neutral-900 px-3 py-3 text-sm font-medium text-white active:bg-neutral-700"
+                onClick={() => printDrawing(model, { snapshot: activeScene()?.snapshot() })}
+              >
+                Print / PDF
+              </button>
+              <button
+                type="button"
+                className="btn-touch rounded-xl border border-neutral-300 px-3 py-3 text-sm font-medium active:bg-neutral-100"
+                onClick={() => downloadDrawingSvg(model, { snapshot: activeScene()?.snapshot() })}
+              >
+                SVG
+              </button>
+              <button
+                type="button"
+                className="btn-touch rounded-xl border border-neutral-300 px-3 py-3 text-sm font-medium active:bg-neutral-100"
+                onClick={() => downloadDrawingDxf(model)}
+              >
+                DXF
+              </button>
+            </div>
           </div>
           {admin.toonKosten && (
             <div>

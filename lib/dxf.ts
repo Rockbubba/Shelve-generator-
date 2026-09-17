@@ -28,6 +28,11 @@ const BASE_LAYER_COLORS: Record<string, number> = {
   BOOR_10MM: 5,
   BOOR_35MM: 5,
   GRAVURE: 8,
+  // Werktekening (lib/drawing.ts).
+  KADER: 7,
+  VERBORGEN: 8,
+  MAAT: 5,
+  TEKST: 7,
 };
 
 /** Kleur op basis van de laagnaam zonder diepte-/zijde-suffixen. */
@@ -181,9 +186,14 @@ export function panelOpsInBedFrame(panel: Panel): BedOp[] {
   });
 }
 
-class DxfBuilder {
+export class DxfBuilder {
   private lines: string[] = [];
   private usedLayers = new Set<string>();
+  private dashedLayers: Set<string>;
+
+  constructor(options: { dashedLayers?: string[] } = {}) {
+    this.dashedLayers = new Set(options.dashedLayers ?? []);
+  }
 
   private push(...pairs: (string | number)[]) {
     for (const p of pairs) this.lines.push(String(p));
@@ -234,11 +244,14 @@ class DxfBuilder {
     push(0, "SECTION", 2, "TABLES");
     push(0, "TABLE", 2, "LTYPE", 70, 1);
     push(0, "LTYPE", 2, "CONTINUOUS", 70, 0, 3, "Solid line", 72, 65, 73, 0, 40, 0);
+    // Gestreept (verborgen lijnen in werktekeningen): 1,6 mm streep, 0,8 mm gat.
+    push(0, "LTYPE", 2, "DASHED", 70, 0, 3, "Dashed __ __ __", 72, 65, 73, 2, 40, 2.4, 49, 1.6, 49, -0.8);
     push(0, "ENDTAB");
     const layers = Array.from(this.usedLayers).sort();
     push(0, "TABLE", 2, "LAYER", 70, layers.length);
     for (const name of layers) {
-      push(0, "LAYER", 2, name, 70, 0, 62, layerColor(name), 6, "CONTINUOUS");
+      const ltype = this.dashedLayers.has(name) ? "DASHED" : "CONTINUOUS";
+      push(0, "LAYER", 2, name, 70, 0, 62, layerColor(name), 6, ltype);
     }
     push(0, "ENDTAB");
     push(0, "ENDSEC");
