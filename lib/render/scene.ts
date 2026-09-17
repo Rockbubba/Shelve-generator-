@@ -1,12 +1,59 @@
 /**
- * three.js-scene in palletstijl: witte achtergrond, MeshToonMaterial met
- * 2-staps gradient map, edge lines op elk paneel, PCFSoft-schaduwen en
+ * three.js-scene: fysiek gebaseerde materialen (MeshStandardMaterial) met
+ * een neutrale studio-omgeving als omgevingslicht, ACES-tonemapping, één
+ * schaduwwerpende zon met PCFSoft-schaduwen, edge lines op elk paneel en
  * render-on-demand (geen continue loop).
+ *
+ * Linksonder wordt een aanzichtenkubus meegerenderd (eigen mini-scene in
+ * een scissor-viewport) die de oriëntatie van de camera volgt; een tik op
+ * een vlak draait de camera geanimeerd naar dat aanzicht.
  */
 
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { CabinetModel } from "../model";
+
+/** Zijde van de aanzichtenkubus in CSS-pixels (incl. marge in de overlay). */
+export const VIEW_CUBE_SIZE = 104;
+
+/** Standaardaanzichten. De kast staat met de voorzijde naar wereld −Z. */
+export type ViewName = "voor" | "achter" | "links" | "rechts" | "boven" | "onder" | "standaard";
+
+/**
+ * Kijkrichting per aanzicht als positie van de camera t.o.v. het doel
+ * (genormaliseerd). Boven/onder krijgen een minieme kanteling naar voren
+ * zodat de achterzijde van de kast bovenin het beeld komt en OrbitControls
+ * een eenduidige draaihoek heeft.
+ */
+const VIEW_DIRECTIONS: Record<Exclude<ViewName, "standaard">, THREE.Vector3> = {
+  voor: new THREE.Vector3(0, 0, -1),
+  achter: new THREE.Vector3(0, 0, 1),
+  links: new THREE.Vector3(1, 0, 0),
+  rechts: new THREE.Vector3(-1, 0, 0),
+  boven: new THREE.Vector3(0, 1, -0.002).normalize(),
+  onder: new THREE.Vector3(0, -1, -0.002).normalize(),
+};
+
+/** Volgorde van BoxGeometry-materialen: +x, −x, +y, −y, +z, −z. */
+const CUBE_FACE_VIEWS: Exclude<ViewName, "standaard">[] = [
+  "links",
+  "rechts",
+  "boven",
+  "onder",
+  "achter",
+  "voor",
+];
+const CUBE_FACE_LABELS: Record<Exclude<ViewName, "standaard">, string> = {
+  voor: "Voor",
+  achter: "Achter",
+  links: "Links",
+  rechts: "Rechts",
+  boven: "Boven",
+  onder: "Onder",
+};
+
+const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
 export class CabinetScene {
   private renderer: THREE.WebGLRenderer;
@@ -20,17 +67,30 @@ export class CabinetScene {
   private ledMat: THREE.MeshBasicMaterial;
   private cableMat: THREE.MeshBasicMaterial;
   private ledGlowMat: THREE.MeshBasicMaterial;
-  private toonMatSelected: THREE.MeshToonMaterial;
-  private feetMat: THREE.MeshToonMaterial;
-  private gradTex: THREE.CanvasTexture;
-  private toonMat: THREE.MeshToonMaterial;
-  private toonMatHdf: THREE.MeshToonMaterial;
+  private panelMatSelected: THREE.MeshStandardMaterial;
+  private feetMat: THREE.MeshStandardMaterial;
+  private panelMat: THREE.MeshStandardMaterial;
+  private panelMatHdf: THREE.MeshStandardMaterial;
   private edgeMat: THREE.LineBasicMaterial;
   private dirLight: THREE.DirectionalLight;
   private ground: THREE.Mesh;
   private raycaster = new THREE.Raycaster();
   private needsRender = true;
   private dampUntil = 0;
+  /** Aanzichtenkubus: eigen scene, camera die de hoofdcamera volgt. */
+  private cubeScene = new THREE.Scene();
+  private cubeCamera = new THREE.PerspectiveCamera(30, 1, 0.1, 20);
+  private cubeMesh: THREE.Mesh;
+  private cubeFaceMats: THREE.MeshLambertMaterial[] = [];
+  private cubeHover = -1;
+  private cubeLight: THREE.DirectionalLight;
+  /** Lopende camera-animatie naar een aanzicht (sferisch geïnterpoleerd). */
+  private viewAnim: {
+    start: number;
+    duration: number;
+    from: THREE.Spherical;
+    to: THREE.Spherical;
+  } | null = null;
   private rafId = 0;
   private lastMaxDim = 0;
   private pointerDown: { x: number; y: number } | null = null;
@@ -42,50 +102,56 @@ export class CabinetScene {
     private onCellTap: (cellKey: string) => void,
     private onShelfTap: (shelfKey: string) => void = () => {},
   ) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.12;
+    // De achtergrond (zachte verloop) komt uit de CSS van de container; de
+    // canvas zelf is transparant.
+    this.renderer.setClearColor(0xffffff, 0);
+    this.renderer.autoClear = false;
     container.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0xffffff);
 
-    // 3-staps toon gradient via canvas: schaduwzijde, middentoon, licht.
-    // Niet te donker, zodat de binnenkant van de vakken leesbaar grijs blijft
-    // in plaats van zwart.
-    const gradCanvas = document.createElement("canvas");
-    gradCanvas.width = 3;
-    gradCanvas.height = 1;
-    const gCtx = gradCanvas.getContext("2d")!;
-    for (const [i, c] of ["#8a8a8a", "#c9c9c9", "#ffffff"].entries()) {
-      gCtx.fillStyle = c;
-      gCtx.fillRect(i, 0, 1, 1);
-    }
-    const gradTex = new THREE.CanvasTexture(gradCanvas);
-    gradTex.minFilter = THREE.NearestFilter;
-    gradTex.magFilter = THREE.NearestFilter;
-    this.gradTex = gradTex;
-    this.feetMat = new THREE.MeshToonMaterial({ color: 0x222222, gradientMap: gradTex });
+    // Neutrale studio-omgeving als omgevingslicht: geeft zachte reflecties
+    // en verloop op de vlakken, zodat wit MDF niet als plat papier oogt.
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.environmentIntensity = 0.55;
+    pmrem.dispose();
 
-    this.toonMat = new THREE.MeshToonMaterial({
-      color: 0xffffff,
-      gradientMap: gradTex,
+    this.feetMat = new THREE.MeshStandardMaterial({
+      color: 0x222222,
+      roughness: 0.45,
+      metalness: 0.4,
     });
-    this.toonMatHdf = new THREE.MeshToonMaterial({
+    this.panelMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.8,
+      metalness: 0,
+    });
+    this.panelMatHdf = new THREE.MeshStandardMaterial({
       color: 0xe8e4dc,
-      gradientMap: gradTex,
+      roughness: 0.9,
+      metalness: 0,
     });
     // Geselecteerde plank (bewerken in de indelingseditor).
-    this.toonMatSelected = new THREE.MeshToonMaterial({
+    this.panelMatSelected = new THREE.MeshStandardMaterial({
       color: 0x93c5fd,
-      gradientMap: gradTex,
+      emissive: 0x1d4ed8,
+      emissiveIntensity: 0.12,
+      roughness: 0.7,
+      metalness: 0,
     });
     this.edgeMat = new THREE.LineBasicMaterial({
-      color: 0x555555,
+      color: 0x4b5563,
+      transparent: true,
+      opacity: 0.55,
       depthWrite: false,
     });
-    // Weggelaten planken: doorzichtig, aantikken zet ze terug.
     this.ledMat = new THREE.MeshBasicMaterial({ color: 0xfff3c4 });
     // Kabelroute van de LED-verlichting: donkere lijn door de doorvoeren.
     // De kabelroute is een schematische overlay: altijd zichtbaar, ook waar
@@ -104,6 +170,7 @@ export class CabinetScene {
       depthWrite: false,
       side: THREE.DoubleSide,
     });
+    // Weggelaten planken: doorzichtig, aantikken zet ze terug.
     this.ghostMat = new THREE.MeshBasicMaterial({
       color: 0x2563eb,
       transparent: true,
@@ -111,12 +178,11 @@ export class CabinetScene {
       depthWrite: false,
     });
 
-    // Zacht vullicht (lucht/vloer) + één schaduwwerpende zon van voren-boven,
-    // iets van links, zodat de vakken van voren worden ingelicht en de
-    // schaduw naar rechtsachter valt.
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.45));
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0xcfcfcf, 0.4));
-    this.dirLight = new THREE.DirectionalLight(0xffffff, 1.1);
+    // Zacht vullicht (lucht/vloer) naast de omgeving, plus één
+    // schaduwwerpende zon van voren-boven, iets van links, zodat de vakken
+    // van voren worden ingelicht en de schaduw naar rechtsachter valt.
+    this.scene.add(new THREE.HemisphereLight(0xffffff, 0xd6d3cd, 0.35));
+    this.dirLight = new THREE.DirectionalLight(0xfff7ec, 1.9);
     this.dirLight.position.set(-900, 2600, -1900);
     this.dirLight.castShadow = true;
     this.dirLight.shadow.mapSize.set(4096, 4096);
@@ -124,16 +190,23 @@ export class CabinetScene {
     // tegen schaduw-acne op vlakken die evenwijdig aan het licht staan.
     this.dirLight.shadow.bias = -0.0002;
     this.dirLight.shadow.normalBias = 3;
-    this.dirLight.shadow.radius = 2;
+    this.dirLight.shadow.radius = 3;
     this.scene.add(this.dirLight);
 
     this.ground = new THREE.Mesh(
       new THREE.PlaneGeometry(20000, 20000),
-      new THREE.ShadowMaterial({ opacity: 0.16 }),
+      new THREE.ShadowMaterial({ opacity: 0.17 }),
     );
     this.ground.rotation.x = -Math.PI / 2;
     this.ground.receiveShadow = true;
     this.scene.add(this.ground);
+
+    // Aanzichtenkubus.
+    this.cubeMesh = this.buildViewCube();
+    this.cubeScene.add(this.cubeMesh);
+    this.cubeScene.add(new THREE.HemisphereLight(0xffffff, 0xd1d5db, 2.2));
+    this.cubeLight = new THREE.DirectionalLight(0xffffff, 1.4);
+    this.cubeScene.add(this.cubeLight);
 
     this.camera = new THREE.PerspectiveCamera(40, 1, 10, 30000);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -182,6 +255,172 @@ export class CabinetScene {
     const data = hits[0].object.userData;
     if (data.shelfKey) this.onShelfTap(data.shelfKey as string);
     else if (data.cellKey) this.onCellTap(data.cellKey as string);
+  }
+
+  /** Kubus met zes gelabelde vlakken (canvas-texturen) en donkere ribben. */
+  private buildViewCube(): THREE.Mesh {
+    const mats = CUBE_FACE_VIEWS.map((view) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 256;
+      canvas.height = 256;
+      const ctx = canvas.getContext("2d")!;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, 256, 256);
+      ctx.strokeStyle = "#9ca3af";
+      ctx.lineWidth = 6;
+      ctx.strokeRect(3, 3, 250, 250);
+      ctx.fillStyle = "#1f2937";
+      ctx.font = "600 56px system-ui, -apple-system, Segoe UI, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(CUBE_FACE_LABELS[view], 128, 134);
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 4;
+      if (view === "boven") {
+        // Bovenvlak: standaard staat de tekst met "boven" naar −Z (de
+        // voorzijde); vanaf de voorkant gezien is dat op zijn kop.
+        tex.center.set(0.5, 0.5);
+        tex.rotation = Math.PI;
+      }
+      // Buiten de tonemapping, zodat de vlakken echt wit blijven.
+      return new THREE.MeshLambertMaterial({ map: tex, toneMapped: false });
+    });
+    this.cubeFaceMats = mats;
+    const geo = new THREE.BoxGeometry(1, 1, 1);
+    const mesh = new THREE.Mesh(geo, mats);
+    const edges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(geo),
+      new THREE.LineBasicMaterial({ color: 0x374151, toneMapped: false }),
+    );
+    mesh.add(edges);
+    return mesh;
+  }
+
+  /** Overlay-element dat bepaalt waar de kubus in de container staat. */
+  private cubeElement: HTMLElement | null = null;
+
+  setCubeElement(el: HTMLElement | null) {
+    this.cubeElement = el;
+    this.requestRender();
+  }
+
+  /** Hoek linksonder (CSS-px, y omhoog) van de kubus-viewport in de container. */
+  private cubeViewport(): { x: number; y: number; size: number } {
+    if (!this.cubeElement) return { x: 0, y: 0, size: VIEW_CUBE_SIZE };
+    const c = this.container.getBoundingClientRect();
+    const r = this.cubeElement.getBoundingClientRect();
+    return { x: r.left - c.left, y: c.bottom - r.bottom, size: r.width };
+  }
+
+  /**
+   * Welk kubusvlak ligt onder een punt in de kubus-overlay? `nx`, `ny` in
+   * genormaliseerde coördinaten (−1…1, y omhoog) van de overlay.
+   */
+  private pickCubeFace(nx: number, ny: number): number {
+    this.syncCubeCamera();
+    this.raycaster.setFromCamera(new THREE.Vector2(nx, ny), this.cubeCamera);
+    const hits = this.raycaster.intersectObject(this.cubeMesh, false);
+    if (hits.length === 0 || hits[0].face === null || hits[0].face === undefined) return -1;
+    return hits[0].face.materialIndex;
+  }
+
+  /** Overlay meldt pointerbewegingen; hover licht het vlak op. */
+  cubeHoverAt(nx: number, ny: number) {
+    const idx = this.pickCubeFace(nx, ny);
+    if (idx === this.cubeHover) return;
+    this.cubeHover = idx;
+    this.cubeFaceMats.forEach((m, i) => m.color.set(i === idx ? 0xbfdbfe : 0xffffff));
+    this.requestRender();
+  }
+
+  cubeHoverEnd() {
+    this.cubeHoverAt(NaN, NaN);
+  }
+
+  /** Tik op de overlay: vlak → aanzicht. Geeft het gekozen aanzicht terug. */
+  cubeTapAt(nx: number, ny: number): ViewName | null {
+    const idx = this.pickCubeFace(nx, ny);
+    if (idx < 0) return null;
+    const view = CUBE_FACE_VIEWS[idx];
+    this.setView(view);
+    return view;
+  }
+
+  /** Kijkrichting van het standaardaanzicht (schuin van voren, iets rechts). */
+  private defaultDirection(): THREE.Vector3 {
+    return new THREE.Vector3(-0.6, 0.28, -0.78).normalize();
+  }
+
+  /**
+   * Draai de camera geanimeerd naar een aanzicht; de afstand tot het doel
+   * blijft gelijk, zodat in- en uitzoomen bewaard blijft.
+   */
+  setView(view: ViewName, duration = 450) {
+    const target = this.controls.target;
+    const offset = this.camera.position.clone().sub(target);
+    const from = new THREE.Spherical().setFromVector3(offset);
+    const dir = view === "standaard" ? this.defaultDirection() : VIEW_DIRECTIONS[view];
+    const to = new THREE.Spherical().setFromVector3(dir.clone().multiplyScalar(offset.length()));
+    to.makeSafe();
+    // Kortste draai om de verticale as.
+    let dTheta = to.theta - from.theta;
+    dTheta = Math.atan2(Math.sin(dTheta), Math.cos(dTheta));
+    to.theta = from.theta + dTheta;
+    if (duration <= 0) {
+      this.applySpherical(to);
+      this.viewAnim = null;
+    } else {
+      this.viewAnim = { start: performance.now(), duration, from, to };
+    }
+    this.requestRender();
+  }
+
+  private applySpherical(sph: THREE.Spherical) {
+    const pos = new THREE.Vector3().setFromSpherical(sph).add(this.controls.target);
+    this.camera.position.copy(pos);
+    this.camera.lookAt(this.controls.target);
+    this.controls.update();
+  }
+
+  private stepViewAnim(now: number): boolean {
+    const a = this.viewAnim;
+    if (!a) return false;
+    const t = Math.min(1, (now - a.start) / a.duration);
+    const k = easeInOut(t);
+    const sph = new THREE.Spherical(
+      a.from.radius + (a.to.radius - a.from.radius) * k,
+      a.from.phi + (a.to.phi - a.from.phi) * k,
+      a.from.theta + (a.to.theta - a.from.theta) * k,
+    );
+    this.applySpherical(sph);
+    if (t >= 1) this.viewAnim = null;
+    return true;
+  }
+
+  /** Kubuscamera kijkt uit dezelfde richting als de hoofdcamera. */
+  private syncCubeCamera() {
+    this.cubeCamera.quaternion.copy(this.camera.quaternion);
+    this.cubeCamera.position
+      .set(0, 0, 1)
+      .applyQuaternion(this.camera.quaternion)
+      .multiplyScalar(3.8);
+    this.cubeCamera.updateMatrixWorld();
+    this.cubeLight.position.copy(this.cubeCamera.position).add(new THREE.Vector3(1, 2, 0));
+  }
+
+  private renderViewCube() {
+    const h = this.container.clientHeight;
+    const { x, y, size } = this.cubeViewport();
+    if (h <= 0 || size <= 0) return;
+    this.syncCubeCamera();
+    this.renderer.clearDepth();
+    this.renderer.setScissorTest(true);
+    this.renderer.setViewport(x, y, size, size);
+    this.renderer.setScissor(x, y, size, size);
+    this.renderer.render(this.cubeScene, this.cubeCamera);
+    this.renderer.setScissorTest(false);
+    this.renderer.setViewport(0, 0, this.container.clientWidth, h);
   }
 
   /** Geometrie voor een paneel: doos, of extrusie van de vrije contour. */
@@ -237,9 +476,13 @@ export class CabinetScene {
     this.cellProxies = [];
     this.shelfTargets = [];
 
-    // Kleuren uit de configuratie (toon-materialen worden hergebruikt).
-    this.toonMat.color.set(model.config.color);
-    this.toonMatHdf.color.set(model.config.rugColor);
+    // Kleuren uit de configuratie (materialen worden hergebruikt). De ruwheid
+    // volgt het plaatmateriaal: gespoten MDF is mat, multiplex met blanke lak
+    // iets glanzender, betonplex (fenolfilm) duidelijk glanzend.
+    this.panelMat.color.set(model.config.color);
+    this.panelMat.roughness =
+      model.config.materialId === "betonplex" ? 0.35 : model.config.materialId === "multiplex" ? 0.65 : 0.8;
+    this.panelMatHdf.color.set(model.config.rugColor);
     this.feetMat.color.set(model.config.feet.color);
 
     const W = model.snappedWidth;
@@ -261,10 +504,10 @@ export class CabinetScene {
         (p.dividerKey && p.dividerKey === selectedShelfKey);
       const mat =
         selected
-          ? this.toonMatSelected
+          ? this.panelMatSelected
           : p.material === "hdf4"
-            ? this.toonMatHdf
-            : this.toonMat;
+            ? this.panelMatHdf
+            : this.panelMat;
       const mesh = new THREE.Mesh(geo, mat);
       if (centered) {
         mesh.position.set(
@@ -440,9 +683,10 @@ export class CabinetScene {
 
     if (Math.abs(maxDim - this.lastMaxDim) / (this.lastMaxDim || 1) > 0.2) {
       const dist = maxDim * 2.65;
-      this.camera.position.set(-dist * 0.6, H * 0.55 + dist * 0.28, -dist * 0.78);
       this.controls.target.set(0, H / 2, 0);
+      this.camera.position.copy(this.defaultDirection()).multiplyScalar(dist).add(this.controls.target);
       this.controls.update();
+      this.viewAnim = null;
       this.lastMaxDim = maxDim;
     }
 
@@ -466,10 +710,14 @@ export class CabinetScene {
   private tick = () => {
     if (this.disposed) return;
     this.rafId = requestAnimationFrame(this.tick);
-    const damping = performance.now() < this.dampUntil;
+    const now = performance.now();
+    const animating = this.stepViewAnim(now);
+    const damping = !animating && now < this.dampUntil;
     if (damping) this.controls.update();
-    if (this.needsRender || damping) {
+    if (this.needsRender || damping || animating) {
+      this.renderer.clear();
       this.renderer.render(this.scene, this.camera);
+      this.renderViewCube();
       this.needsRender = false;
     }
   };
@@ -486,6 +734,11 @@ export class CabinetScene {
         }
       });
     }
+    this.cubeFaceMats.forEach((m) => {
+      m.map?.dispose();
+      m.dispose();
+    });
+    this.scene.environment?.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }
