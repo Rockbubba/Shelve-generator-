@@ -13,6 +13,7 @@
  */
 
 import {
+  BackTaper,
   CabinetConfig,
   CellFill,
   DADO_DEPTH,
@@ -470,12 +471,41 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
   }
 
   // Achterzijde: lineair verloop (scheve muur) en bestaande muurplint.
-  const taper = config.backTaper;
+  // De inkorting wordt begrensd zodat de kast nergens ondieper wordt dan
+  // MIN_PROFILE_DEPTH — ook niet in combinatie met een voorkantprofiel, dat
+  // op dezelfde plek diepte wegneemt.
+  const rawTaper = config.backTaper;
+  let taperScale = 1;
+  for (let k = 0; k <= 32; k++) {
+    const x = (W * k) / 32;
+    const back = rawTaper.left + (rawTaper.right - rawTaper.left) * (k / 32);
+    if (back <= 0) continue;
+    const ruimte = frontAt(x) - MIN_PROFILE_DEPTH;
+    if (back > ruimte) taperScale = Math.min(taperScale, Math.max(0, ruimte) / back);
+  }
+  const taper: BackTaper =
+    taperScale < 1
+      ? { left: round1(rawTaper.left * taperScale), right: round1(rawTaper.right * taperScale) }
+      : rawTaper;
+  if (taperScale < 1) {
+    warnings.push(
+      `Inkorting achterzijde begrensd op ${taper.left} / ${taper.right} mm zodat de kast minimaal ${MIN_PROFILE_DEPTH} mm diep blijft.`,
+    );
+  }
   const backAt = (x: number) =>
     round1(
       taper.left +
         (taper.right - taper.left) * Math.min(1, Math.max(0, x / W)),
     );
+  /** Helling van de achterwand over de breedte (dz/dx). */
+  const backSlope = W > 0 ? (taper.right - taper.left) / W : 0;
+  /** Rotatie om de verticale as waarmee een rugpaneel het verloop volgt. */
+  const backYaw = backSlope !== 0 ? -Math.atan(backSlope) : undefined;
+  /**
+   * Een gekantelde rug moet langer zijn dan de opening die hij afdekt:
+   * horizontale overspanning / cos(hoek).
+   */
+  const backStretch = Math.sqrt(1 + backSlope * backSlope);
   const skirt = config.wallSkirting;
   // Hoogte van de muurplint boven de romp-onderkant (romp staat evt. op poten).
   const skirtNotchH =
@@ -1285,7 +1315,10 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
         if (!fillHasRug(cell.fill)) continue;
         rugNo++;
         const id = `R${rugNo}`;
-        const rw = round1(colWidth(c) + 2 * rugOversize);
+        // Horizontale overspanning van de opening; het paneel zelf is bij een
+        // scheve achterwand langer omdat het gekanteld staat.
+        const spanX = round1(colWidth(c) + 2 * rugOversize);
+        const rw = round1(spanX * backStretch);
         const rh = round1(cell.h + 2 * rugOversize);
         const gBack = cellBack + (behindSkirt(moduleBase + cell.y) ? skirtDepth : 0);
         panels.push({
@@ -1298,8 +1331,11 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
           ops: [engrave(id, Math.max(rw, rh), Math.min(rw, rh), "A")],
           notches: [],
           machineSide: "A",
+          yaw: backYaw,
           place: {
-            x: xs[c] + t - rugOversize,
+            // Het paneel draait om zijn hart, dus het hart moet op het hart
+            // van de opening liggen — ook als het paneel langer is.
+            x: round1(xs[c] + t + colWidth(c) / 2 - rw / 2),
             y: bodyBase + moduleBase + cell.y - rugOversize,
             z: sponning
               ? gBack + RUG_GROOVE_BACK_OFFSET - HDF_THICKNESS / 2
@@ -1331,7 +1367,9 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
           else break;
         }
         const xEnd = endI === columns ? W : xs[endI] + t / 2;
-        const pieceW = round1(xEnd - xStart);
+        const spanX = round1(xEnd - xStart);
+        // Gekanteld paneel: langer dan de horizontale overspanning.
+        const pieceW = round1(spanX * backStretch);
         if (pieceW > usable) {
           warnings.push(
             `Achterwandstuk van ${pieceW} mm past niet op de HDF-plaat (max ${usable} mm) — verklein de kolombreedte of verdeel de kast.`,
@@ -1340,6 +1378,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
         rugNo++;
         const id = `R${rugNo}`;
         const xc = (xStart + xEnd) / 2;
+        const pieceX = round1(xc - pieceW / 2);
         panels.push({
           id,
           type: "rug",
@@ -1350,9 +1389,9 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
           ops: [engrave(id, Math.max(pieceW, pieceH), Math.min(pieceW, pieceH), "A")],
           notches: [],
           machineSide: "A",
-          yaw: slope !== 0 ? -Math.atan(slope) : undefined,
+          yaw: backYaw,
           place: {
-            x: xStart,
+            x: pieceX,
             y: bodyBase + moduleBase + yStart,
             z: backAt(xc) - HDF_THICKNESS,
             w: pieceW,

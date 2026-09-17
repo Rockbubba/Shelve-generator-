@@ -202,7 +202,13 @@ boringen op de juiste plek zitten.
   achterrand als contour. Alle dieptematen worden intern in één globaal
   assenstelsel (muurlijn = 0) gerekend en per onderdeel naar het eigen
   CNC-frame vertaald, zodat dado's en boringen aan beide kanten van een naad
-  exact samenvallen.
+  exact samenvallen. Rugpanelen staan in hetzelfde schuine vlak: ze krijgen
+  de bijbehorende `yaw` mee en zijn met factor `1/cos` verlengd, zodat ze hun
+  opening ondanks de kanteling nog volledig afdekken — dat geldt zowel voor
+  de losse panelen per vak als voor de stukken van een volledig dichte
+  achterwand. De inkorting wordt begrensd zodat de kast nergens ondieper
+  wordt dan 120 mm, ook niet samen met een voorkantprofiel dat op dezelfde
+  plek diepte wegneemt; wordt er begrensd, dan meldt de generator dat.
 - **Opslaan en herstellen** (`lib/storage.ts`, `components/SaveMenu.tsx`):
   elke wijziging wordt automatisch in de browser bewaard (localStorage,
   inclusief de actieve stap) en na een refresh hersteld. Via het
