@@ -1414,3 +1414,65 @@ describe("tussenschotten", () => {
     expect(n.sheets.flatMap((s) => s.placements).filter((pl) => pl.panel.type === "schot")).toHaveLength(3);
   });
 });
+
+
+describe("tussenschotten delen de rug op", () => {
+  const rugsIn = (m: ReturnType<typeof buildCabinetModel>, cellKey: string) => {
+    const cell = m.cells.find((c) => c.key === cellKey)!;
+    return m.panels
+      .filter((p) => p.type === "rug" && p.place.y < cell.y + 1 && p.place.y + p.place.h > cell.y + cell.h - 1 && p.place.x + p.place.w / 2 > cell.x && p.place.x + p.place.w / 2 < cell.x + cell.w)
+      .sort((a, b) => a.place.x - b.place.x);
+  };
+
+  it("geschroefd: één rugpaneel per deelvak, elk overlapt het schot met een halve dikte", () => {
+    const zonder = buildCabinetModel({ ...ACCEPT, cellFills: { "0:1:1": "rug" } });
+    const met = buildCabinetModel({ ...ACCEPT, cellFills: { "0:1:1": "rug" }, dividers: { "0:1:1": 2 } });
+    expect(rugsIn(zonder, "0:1:1")).toHaveLength(1);
+    const rugs = rugsIn(met, "0:1:1");
+    expect(rugs).toHaveLength(3);
+    const ds = met.panels.filter((p) => p.type === "schot").sort((a, b) => a.place.x - b.place.x);
+    const t = ACCEPT.thickness;
+    // Linkerpaneel eindigt op het hart van schot 1, middenpaneel begint daar.
+    expect(rugs[0].place.x + rugs[0].place.w).toBeCloseTo(ds[0].place.x + t / 2, 1);
+    expect(rugs[1].place.x).toBeCloseTo(ds[0].place.x + t / 2, 1);
+    expect(rugs[1].place.x + rugs[1].place.w).toBeCloseTo(ds[1].place.x + t / 2, 1);
+    // Drie deelpanelen met elk een halve schotdikte overlap tellen samen
+    // precies op tot het ongedeelde paneel (de schotdiktes vallen eruit,
+    // de extra overlappen komen erbij).
+    expect(rugs.reduce((s, r) => s + r.place.w, 0)).toBeCloseTo(rugsIn(zonder, "0:1:1")[0].place.w, 0);
+    // Schroeven per paneel nemen toe.
+    const schroef = (m: typeof met) => m.hardware.find((h) => h.name.includes("(rug)"))!.qty;
+    expect(schroef(met) - schroef(zonder)).toBe(2 * 8);
+    expect(nestPanels(met.panels).errors).toHaveLength(0);
+  });
+
+  it("sponning: het schot krijgt aan beide zijden een groef en de deelpanelen vallen erin", () => {
+    const m = buildCabinetModel({ ...ACCEPT, rugMount: "sponning", cellFills: { "0:1:1": "rug" }, dividers: { "0:1:1": 1 } });
+    const d = m.panels.find((p) => p.type === "schot")!;
+    const groeven = d.ops.filter((o): o is RectOp => o.kind === "rect" && o.layer === "RUG_SPONNING");
+    expect(groeven.map((g) => g.side).sort()).toEqual(["A", "B"]);
+    for (const g of groeven) {
+      expect(g.x).toBe(0);
+      expect(g.w).toBeCloseTo(d.length, 1);
+      expect(g.y + g.h / 2).toBeCloseTo(12, 1);
+    }
+    const rugs = rugsIn(m, "0:1:1");
+    expect(rugs).toHaveLength(2);
+    // Paneelranden liggen in de groef: 10 mm diep min 1 mm speling aan elke kant van het schot.
+    expect(rugs[0].place.x + rugs[0].place.w).toBeCloseTo(d.place.x + 9, 1);
+    expect(rugs[1].place.x).toBeCloseTo(d.place.x + ACCEPT.thickness - 9, 1);
+    // Geen groef zonder rug in het vak.
+    const open = buildCabinetModel({ ...ACCEPT, rugMount: "sponning", cellFills: { "0:1:1": "open" }, dividers: { "0:1:1": 1 } });
+    expect(open.panels.find((p) => p.type === "schot")!.ops.some((o) => o.layer === "RUG_SPONNING")).toBe(false);
+  });
+
+  it("volgt het verloop per deelpaneel", () => {
+    const m = buildCabinetModel({ ...ACCEPT, cellFills: { "0:1:1": "rug" }, dividers: { "0:1:1": 2 }, backTaper: { left: 200, right: 0 } });
+    const rugs = rugsIn(m, "0:1:1");
+    expect(rugs).toHaveLength(3);
+    for (const r of rugs) expect(r.yaw).toBeDefined();
+    // Panelen liggen op oplopende diepte van links naar rechts (achterkant loopt naar 0).
+    expect(rugs[0].place.z).toBeGreaterThan(rugs[1].place.z);
+    expect(rugs[1].place.z).toBeGreaterThan(rugs[2].place.z);
+  });
+});

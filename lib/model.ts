@@ -1427,6 +1427,24 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
           }
         }
 
+        // Rug in sponning: de deelpanelen links en rechts vallen in een groef
+        // aan weerszijden van het schot (zoals bij een binnenstaander is dat
+        // een tweede bewerkingszijde).
+        if (sponning && fillHasRug(d.cell.fill)) {
+          for (const side of ["A", "B"] as Side[]) {
+            ops.push({
+              kind: "rect",
+              layer: "RUG_SPONNING",
+              side,
+              x: 0,
+              y: round1(RUG_GROOVE_BACK_OFFSET - RUG_GROOVE_WIDTH / 2),
+              w: Ld,
+              h: RUG_GROOVE_WIDTH,
+              depth: RUG_GROOVE_DEPTH,
+            });
+          }
+        }
+
         // LED: de strip loopt achter-boven door het vak; het schot krijgt een
         // doorvoer zodat de twee delen doorgelust kunnen worden.
         if (config.led.enabled) {
@@ -1534,42 +1552,57 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
     // Sponning: paneel valt in de gefreesde groef.
     const rugOversize = sponning ? RUG_GROOVE_DEPTH - RUG_CLEARANCE : t / 2;
     for (let c = 0; c < columns && !fullBack; c++) {
-      const cellBack = backAt(xs[c] + t + colWidth(c) / 2);
       for (const cell of colCells[c]) {
         if (!fillHasRug(cell.fill)) continue;
-        rugNo++;
-        const id = `R${rugNo}`;
-        // Horizontale overspanning van de opening; het paneel zelf is bij een
-        // scheve achterwand langer omdat het gekanteld staat.
-        const spanX = round1(colWidth(c) + 2 * rugOversize);
-        const rw = round1(spanX * backStretch);
-        const rh = round1(cell.h + 2 * rugOversize);
-        const gBack = cellBack + (behindSkirt(moduleBase + cell.y) ? skirtDepth : 0);
-        panels.push({
-          id,
-          type: "rug",
-          material: "hdf4",
-          length: Math.max(rw, rh),
-          width: Math.min(rw, rh),
-          thickness: HDF_THICKNESS,
-          ops: [engrave(id, Math.max(rw, rh), Math.min(rw, rh), "A")],
-          notches: [],
-          machineSide: "A",
-          yaw: backYaw,
-          place: {
-            // Het paneel draait om zijn hart, dus het hart moet op het hart
-            // van de opening liggen — ook als het paneel langer is.
-            x: round1(xs[c] + t + colWidth(c) / 2 - rw / 2),
-            y: bodyBase + moduleBase + cell.y - rugOversize,
-            z: sponning
-              ? gBack + RUG_GROOVE_BACK_OFFSET - HDF_THICKNESS / 2
-              : gBack - HDF_THICKNESS,
-            w: rw,
-            h: rh,
-            d: HDF_THICKNESS,
-          },
-          module: m,
-        });
+        // Tussenschotten delen het vak op: één rugpaneel per deelvak. Bij een
+        // geschroefde rug overlappen buurpanelen elk de halve schotdikte,
+        // net als achter een binnenstaander; bij sponning vallen ze in de
+        // groeven aan weerszijden van het schot.
+        const divs = colDividers[c].filter((d) => d.cell === cell).sort((a, b) => a.x - b.x);
+        const openings: [number, number][] = [];
+        let left = xs[c] + t;
+        for (const d of divs) {
+          openings.push([left, d.x]);
+          left = d.x + t;
+        }
+        openings.push([left, xs[c] + t + colWidth(c)]);
+
+        for (const [l, r] of openings) {
+          rugNo++;
+          const id = `R${rugNo}`;
+          const centreX = (l + r) / 2;
+          // Horizontale overspanning van de opening; het paneel zelf is bij
+          // een scheve achterwand langer omdat het gekanteld staat.
+          const spanX = round1(r - l + 2 * rugOversize);
+          const rw = round1(spanX * backStretch);
+          const rh = round1(cell.h + 2 * rugOversize);
+          const gBack = backAt(centreX) + (behindSkirt(moduleBase + cell.y) ? skirtDepth : 0);
+          panels.push({
+            id,
+            type: "rug",
+            material: "hdf4",
+            length: Math.max(rw, rh),
+            width: Math.min(rw, rh),
+            thickness: HDF_THICKNESS,
+            ops: [engrave(id, Math.max(rw, rh), Math.min(rw, rh), "A")],
+            notches: [],
+            machineSide: "A",
+            yaw: backYaw,
+            place: {
+              // Het paneel draait om zijn hart, dus het hart moet op het hart
+              // van de opening liggen — ook als het paneel langer is.
+              x: round1(centreX - rw / 2),
+              y: bodyBase + moduleBase + cell.y - rugOversize,
+              z: sponning
+                ? gBack + RUG_GROOVE_BACK_OFFSET - HDF_THICKNESS / 2
+                : gBack - HDF_THICKNESS,
+              w: rw,
+              h: rh,
+              d: HDF_THICKNESS,
+            },
+            module: m,
+          });
+        }
       }
     }
 

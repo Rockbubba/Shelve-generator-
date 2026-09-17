@@ -77,18 +77,29 @@ describe("sweep: geometrische invarianten", () => {
     });
 
     it(`${naam}: rugpanelen dekken hun opening horizontaal af`, () => {
+      const t = cfg.thickness;
+      // Openingen: vakken, opgedeeld door hun tussenschotten.
+      const openings: { x: number; w: number; y: number; h: number }[] = [];
+      for (const c of m.cells) {
+        const divs = m.panels
+          .filter((p) => p.type === "schot" && p.dividerKey?.startsWith(`div:${c.key}:`))
+          .sort((a, b) => a.place.x - b.place.x);
+        let left = c.x;
+        for (const d of divs) {
+          openings.push({ x: left, w: d.place.x - left, y: c.y, h: c.h });
+          left = d.place.x + t;
+        }
+        openings.push({ x: left, w: c.x + c.w - left, y: c.y, h: c.h });
+      }
       for (const p of m.panels.filter((q) => q.type === "rug")) {
         const yaw = p.yaw ?? 0;
         const overspanning = p.place.w * Math.cos(yaw);
-        const cellen = m.cells.filter(
-          (c) => c.y + 1 >= p.place.y && c.y + c.h - 1 <= p.place.y + p.place.h,
+        const l = p.place.x + (p.place.w - overspanning) / 2;
+        const r = p.place.x + (p.place.w + overspanning) / 2;
+        const dekking = openings.filter(
+          (o) => o.y + 1 >= p.place.y && o.y + o.h - 1 <= p.place.y + p.place.h && o.x >= l - 2 && o.x + o.w <= r + 2,
         );
-        const dekking = cellen.filter(
-          (c) =>
-            c.x >= p.place.x + (p.place.w - overspanning) / 2 - 2 &&
-            c.x + c.w <= p.place.x + (p.place.w + overspanning) / 2 + 2,
-        );
-        expect(dekking.length, `${p.id} dekt geen enkel vak af`).toBeGreaterThan(0);
+        expect(dekking.length, `${p.id} dekt geen enkele opening af`).toBeGreaterThan(0);
       }
     });
 

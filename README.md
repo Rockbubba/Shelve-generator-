@@ -263,8 +263,11 @@ boringen op de juiste plek zitten.
   7 mm in en krijgt de bijbehorende inkeping aan de voorhoek — en twee
   schroeven 4 × 40 van onderaf door de plank eronder (`BOOR_4_5MM_DOOR`).
   Bij LED-verlichting krijgt elk schot een Ø10-doorvoer zodat de strip van
-  het vak in delen kan worden doorgelust. Onderdeelnummers `T1…`, in de BOM
-  als "Tussenschot".
+  het vak in delen kan worden doorgelust. Een rugpaneel wordt door de
+  schotten opgedeeld: één paneel per deelvak. Geschroefd overlappen de
+  buurpanelen elk de halve schotdikte (zoals achter een binnenstaander); in
+  sponning krijgt het schot aan beide zijden een groef en vallen de
+  deelpanelen daarin. Onderdeelnummers `T1…`, in de BOM als "Tussenschot".
 - **Plint**: 80 mm hoog tussen de buitenste staanders; standaard 40 mm
   teruggelegd t.o.v. het ondiepste punt van de voorkant, maar ook vlak met
   de voorkant of op een eigen maat (0–150 mm) te zetten. De plint loopt in
