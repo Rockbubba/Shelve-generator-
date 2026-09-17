@@ -556,9 +556,9 @@ function drawFrame(b: DrawingBuilder, model: CabinetModel, L: Layout, opts: Draw
   const mat = materialById(cfg.materialId);
   const rug =
     cfg.rugMode === "volledig"
-      ? "volledige achterwand HDF 4 mm"
+      ? `volledige achterwand HDF ${fmtMm(cfg.hdfThickness)} mm`
       : model.panels.some((p) => p.type === "rug")
-        ? `rug HDF 4 mm (${cfg.rugMount})`
+        ? `rug HDF ${fmtMm(cfg.hdfThickness)} mm (${cfg.rugMount})`
         : "geen rug";
   const base =
     cfg.base === "plint"

@@ -42,7 +42,9 @@ export const DEFAULT_SHEET_STOCK: SheetStock = {
 };
 
 // ---- HDF-rug ----------------------------------------------------------------
-export const HDF_THICKNESS = 4;
+export const HDF_THICKNESS = 4; // standaard rugdikte
+export const MIN_HDF_THICKNESS = 2.5;
+export const MAX_HDF_THICKNESS = 10;
 export const HDF_SHEET_LENGTH = 2440;
 export const HDF_SHEET_WIDTH = 1220;
 export const RUG_GROOVE_WIDTH = 4; // RUG_SPONNING breedte
@@ -381,6 +383,8 @@ export interface CabinetConfig {
   plinthSetback: number;
   /** Hoogte van de voorplint (mm); de romp erboven wordt navenant korter. */
   plinthHeight: number;
+  /** Dikte van het rugmateriaal (HDF) in mm; de sponning volgt deze dikte. */
+  hdfThickness: number;
   /** LED-strip achter-boven in elk vak, met kabeldoorvoer door de planken. */
   led: LedConfig;
   /**
@@ -420,6 +424,7 @@ export const DEFAULT_CONFIG: CabinetConfig = {
   rugColor: "#e8e4dc",
   plinthSetback: PLINTH_SETBACK,
   plinthHeight: PLINTH_HEIGHT,
+  hdfThickness: HDF_THICKNESS,
   led: { enabled: false, side: "links", inbouw: true },
   sheetStock: DEFAULT_SHEET_STOCK,
 };

@@ -1502,3 +1502,28 @@ describe("plinthoogte instelbaar", () => {
     expect(hoog.panels.find((p) => p.type === "plint")!.place.h).toBe(200);
   });
 });
+
+describe("rugdikte (HDF) instelbaar", () => {
+  it("rugpanelen en sponning volgen de dikte", () => {
+    const cfg = { ...DEFAULT_CONFIG, rugMount: "sponning" as const, cellFills: { "0:0:0": "rug" as const } };
+    const m3 = buildCabinetModel({ ...cfg, hdfThickness: 3 });
+    const m6 = buildCabinetModel({ ...cfg, hdfThickness: 6 });
+    for (const [m, d] of [[m3, 3], [m6, 6]] as const) {
+      const rug = m.panels.find((p) => p.type === "rug")!;
+      expect(rug.thickness).toBe(d);
+      expect(rug.place.d).toBe(d);
+      const grooves = m.panels
+        .flatMap((p) => p.ops)
+        .filter((o): o is Extract<typeof o, { kind: "rect" }> => o.layer === "RUG_SPONNING" && o.kind === "rect");
+      expect(grooves.length).toBeGreaterThan(0);
+      for (const g of grooves) expect(Math.min(g.w, g.h)).toBeCloseTo(d, 3);
+      expect(m.hardware.some((h) => h.name.includes(`HDF rugpaneel ${d} mm`))).toBe(true);
+    }
+  });
+
+  it("wordt begrensd op 2,5–10 mm", () => {
+    const cfg = { ...DEFAULT_CONFIG, cellFills: { "0:0:0": "rug" as const } };
+    expect(buildCabinetModel({ ...cfg, hdfThickness: 1 }).panels.find((p) => p.type === "rug")!.thickness).toBe(2.5);
+    expect(buildCabinetModel({ ...cfg, hdfThickness: 40 }).panels.find((p) => p.type === "rug")!.thickness).toBe(10);
+  });
+});

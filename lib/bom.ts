@@ -65,7 +65,7 @@ export function buildBom(model: CabinetModel, nesting: NestingResult): BomRow[] 
     rows.push({
       ids: rowPanels.map((p) => p.id),
       type: first.type,
-      material: first.material === "hdf4" ? "HDF 4 mm" : materialLabel,
+      material: first.material === "hdf4" ? `HDF ${first.thickness} mm` : materialLabel,
       length: first.length,
       width: first.width,
       thickness: first.thickness,

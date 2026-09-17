@@ -12,6 +12,9 @@ import {
   PLINTH_HEIGHT,
   MIN_PLINTH_HEIGHT,
   MAX_PLINTH_HEIGHT,
+  HDF_THICKNESS,
+  MIN_HDF_THICKNESS,
+  MAX_HDF_THICKNESS,
   PLINTH_SETBACK,
   DEPTH_OPTIONS,
   FrontProfile,
@@ -788,7 +791,7 @@ export default function Configurator() {
                 onChange={(plaat18) => update({ sheetStock: { ...config.sheetStock, plaat18 } })}
               />
               <StockEditor
-                label="HDF 4 mm (rug)"
+                label={`HDF ${config.hdfThickness} mm (rug)`}
                 stock={config.sheetStock.hdf4}
                 defaultSize={{ length: HDF_SHEET_LENGTH, width: HDF_SHEET_WIDTH }}
                 onChange={(hdf4) => update({ sheetStock: { ...config.sheetStock, hdf4 } })}
@@ -869,6 +872,15 @@ export default function Configurator() {
             value={config.rugMount}
             onChange={(rugMount) => update({ rugMount })}
           />
+          <Stepper
+            label="Rugdikte (HDF)"
+            value={config.hdfThickness}
+            min={MIN_HDF_THICKNESS}
+            max={MAX_HDF_THICKNESS}
+            step={0.5}
+            hint={`standaard ${HDF_THICKNESS} mm; sponning even breed`}
+            onChange={(hdfThickness) => update({ hdfThickness })}
+          />
           <Segmented
             label="Onderkant"
             options={[
@@ -887,7 +899,7 @@ export default function Configurator() {
                 min={MIN_PLINTH_HEIGHT}
                 max={MAX_PLINTH_HEIGHT}
                 step={5}
-                hint={`standaard ${PLINTH_HEIGHT} mm; de romp erboven wordt korter`}
+                hint={`standaard ${PLINTH_HEIGHT} mm`}
                 onChange={(plinthHeight) => update({ plinthHeight })}
               />
               <Segmented
@@ -1047,8 +1059,8 @@ export default function Configurator() {
             <p className="font-medium text-neutral-800">Rugpanelen</p>
             <p className="mt-1">
               {config.rugMode === "volledig"
-                ? "De hele achterzijde wordt dicht gezet met 4 mm HDF, opgedeeld in stukken die op de plaat passen; de naden vallen achter staanders. Tik op een vak om er een dichtvak (deur) van te maken."
-                : "Tik op een vak in de 3D-weergave: open → rugpaneel (4 mm HDF) → dichtvak (inliggende deur op potscharnieren + rug) → open. De generator stelt hoekvakken en de onderste rij voor als minimale set tegen schranken."}
+                ? `De hele achterzijde wordt dicht gezet met ${config.hdfThickness} mm HDF, opgedeeld in stukken die op de plaat passen; de naden vallen achter staanders. Tik op een vak om er een dichtvak (deur) van te maken.`
+                : `Tik op een vak in de 3D-weergave: open → rugpaneel (${config.hdfThickness} mm HDF) → dichtvak (inliggende deur op potscharnieren + rug) → open. De generator stelt hoekvakken en de onderste rij voor als minimale set tegen schranken.`}
             </p>
             <p className="mt-1">
               Dichtvakken: deur 2 mm rondom inliggend, Ø35-cups aan de binnenzijde,
