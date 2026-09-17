@@ -1,10 +1,12 @@
 /**
- * Client-side export: DXF per plaat, alles-in-één ZIP en CSV.
+ * Client-side export: DXF per plaat, alles-in-één ZIP, CSV en de
+ * werktekening (SVG, DXF of print/PDF).
  * Op mobiel wordt waar mogelijk de share sheet gebruikt (Web Share API).
  */
 
 import JSZip from "jszip";
 import { bomToCsv } from "./bom";
+import { buildDrawing, drawingFileName, drawingToDxf, drawingToSvg, DrawingOptions } from "./drawing";
 import { sheetFileName, sheetToDxf } from "./dxf";
 import { CabinetModel } from "./model";
 import { NestingResult } from "./nesting";
@@ -64,4 +66,52 @@ export async function downloadBomCsv(model: CabinetModel, nesting: NestingResult
     }),
     "onderdelenlijst.csv",
   );
+}
+
+// ---- Werktekening -------------------------------------------------------------
+
+export async function downloadDrawingSvg(model: CabinetModel, opts: DrawingOptions = {}) {
+  const svg = drawingToSvg(buildDrawing(model, opts));
+  await deliver(new Blob([svg], { type: "image/svg+xml" }), drawingFileName(model, "svg"));
+}
+
+export async function downloadDrawingDxf(model: CabinetModel) {
+  const dxf = drawingToDxf(buildDrawing(model));
+  await deliver(new Blob([dxf], { type: "application/dxf" }), drawingFileName(model, "dxf"));
+}
+
+/**
+ * Werktekening in een nieuw venster op A3 liggend, met direct de
+ * printdialoog (opslaan als PDF via de browser). Valt terug op een
+ * SVG-download als pop-ups geblokkeerd zijn.
+ */
+export async function printDrawing(model: CabinetModel, opts: DrawingOptions = {}) {
+  const drawing = buildDrawing(model, opts);
+  const svg = drawingToSvg(drawing);
+  const win = window.open("", "_blank");
+  if (!win) {
+    await downloadDrawingSvg(model, opts);
+    return;
+  }
+  win.document.open();
+  win.document.write(`<!doctype html>
+<html lang="nl"><head><meta charset="utf-8"><title>${drawingFileName(model, "svg").replace(".svg", "")}</title>
+<style>
+  @page { size: A3 landscape; margin: 0; }
+  html, body { margin: 0; padding: 0; background: #e5e7eb; }
+  body { display: flex; min-height: 100vh; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; }
+  /* Op scherm passend in het venster en gecentreerd; bij printen exact A3. */
+  svg { display: block; width: min(420mm, 100%); max-height: calc(100vh - 32px); height: auto; background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,.15); }
+  @media print { body { display: block; padding: 0; background: #fff; } svg { width: 420mm; height: 297mm; max-height: none; box-shadow: none; } }
+</style></head><body>${svg}</body></html>`);
+  win.document.close();
+  // Even wachten tot de SVG (en de ingesloten afbeelding) staat.
+  setTimeout(() => {
+    try {
+      win.focus();
+      win.print();
+    } catch {
+      // Printdialoog niet beschikbaar: het venster blijft open om te bewaren.
+    }
+  }, 400);
 }

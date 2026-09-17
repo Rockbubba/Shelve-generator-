@@ -14,6 +14,33 @@ export const TOOL_RADIUS = KERF / 2;
 export const USABLE_LENGTH = SHEET_LENGTH - 2 * SHEET_MARGIN; // 2420
 export const USABLE_WIDTH = SHEET_WIDTH - 2 * SHEET_MARGIN; // 1200
 
+/**
+ * Een plaatmaat in de voorraad. `qty` = aantal beschikbare platen, of null
+ * voor onbeperkt (de standaardplaat die je bijbestelt). Eindige voorraad
+ * (restplaten, al ingekochte platen) wordt door de nesting eerst gebruikt.
+ */
+export interface StockSheet {
+  length: number;
+  width: number;
+  qty: number | null;
+  /** Optionele naam, bv. "rest van project X". */
+  naam?: string;
+}
+
+/** Plaatvoorraad per materiaal: 18mm-plaat en HDF-rug. */
+export interface SheetStock {
+  plaat18: StockSheet[];
+  hdf4: StockSheet[];
+}
+
+export const MIN_STOCK_SHEET = 200; // kleinste zinvolle restplaat (mm)
+export const MAX_STOCK_SHEET = 6000;
+
+export const DEFAULT_SHEET_STOCK: SheetStock = {
+  plaat18: [{ length: SHEET_LENGTH, width: SHEET_WIDTH, qty: null }],
+  hdf4: [{ length: 2440, width: 1220, qty: null }],
+};
+
 // ---- HDF-rug ----------------------------------------------------------------
 export const HDF_THICKNESS = 4;
 export const HDF_SHEET_LENGTH = 2440;
@@ -352,6 +379,11 @@ export interface CabinetConfig {
   plinthSetback: number;
   /** LED-strip achter-boven in elk vak, met kabeldoorvoer door de planken. */
   led: LedConfig;
+  /**
+   * Plaatvoorraad voor de nesting: restplaten en ingekochte platen (met
+   * aantal) worden eerst gebruikt, daarna de onbeperkte standaardplaat.
+   */
+  sheetStock: SheetStock;
 }
 
 export const DEFAULT_CONFIG: CabinetConfig = {
@@ -384,6 +416,7 @@ export const DEFAULT_CONFIG: CabinetConfig = {
   rugColor: "#e8e4dc",
   plinthSetback: PLINTH_SETBACK,
   led: { enabled: false, side: "links", inbouw: true },
+  sheetStock: DEFAULT_SHEET_STOCK,
 };
 
 // ---- Diepte-opties (strip-nesting) ------------------------------------------

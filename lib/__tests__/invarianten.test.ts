@@ -3,6 +3,7 @@ import { CabinetConfig, DEFAULT_CONFIG, depthOption, SHEET_LENGTH, SHEET_MARGIN,
 import { buildCabinetModel } from "../model";
 import { nestPanels } from "../nesting";
 import { placementContour, placementOps, sheetToDxf } from "../dxf";
+import { buildDrawing, drawingToDxf, drawingToSvg, PAPER } from "../drawing";
 
 const B: CabinetConfig = { ...DEFAULT_CONFIG, depth: depthOption(3), width: 1800, height: 2000, columns: 4, rows: 5, base: "geen", cellFills: {} };
 
@@ -38,6 +39,23 @@ describe("sweep: geometrische invarianten", () => {
   for (const [naam, patch] of CASES) {
     const cfg = { ...B, ...patch };
     const m = buildCabinetModel(cfg);
+
+    it(`${naam}: werktekening past in het kader en is geldig`, () => {
+      const d = buildDrawing(m);
+      const lo = PAPER.margin - 0.01;
+      for (const p of d.polys) {
+        for (const [x, y] of p.points) {
+          expect(Number.isFinite(x) && Number.isFinite(y)).toBe(true);
+          expect(x).toBeGreaterThanOrEqual(lo);
+          expect(x).toBeLessThanOrEqual(PAPER.width - lo);
+          expect(y).toBeGreaterThanOrEqual(lo);
+          expect(y).toBeLessThanOrEqual(PAPER.height - lo);
+        }
+      }
+      expect(d.views).toHaveLength(3);
+      expect(drawingToSvg(d)).not.toContain("NaN");
+      expect(drawingToDxf(d)).not.toContain("NaN");
+    });
 
     it(`${naam}: panelen hebben positieve maten`, () => {
       for (const p of m.panels) {
@@ -77,18 +95,29 @@ describe("sweep: geometrische invarianten", () => {
     });
 
     it(`${naam}: rugpanelen dekken hun opening horizontaal af`, () => {
+      const t = cfg.thickness;
+      // Openingen: vakken, opgedeeld door hun tussenschotten.
+      const openings: { x: number; w: number; y: number; h: number }[] = [];
+      for (const c of m.cells) {
+        const divs = m.panels
+          .filter((p) => p.type === "schot" && p.dividerKey?.startsWith(`div:${c.key}:`))
+          .sort((a, b) => a.place.x - b.place.x);
+        let left = c.x;
+        for (const d of divs) {
+          openings.push({ x: left, w: d.place.x - left, y: c.y, h: c.h });
+          left = d.place.x + t;
+        }
+        openings.push({ x: left, w: c.x + c.w - left, y: c.y, h: c.h });
+      }
       for (const p of m.panels.filter((q) => q.type === "rug")) {
         const yaw = p.yaw ?? 0;
         const overspanning = p.place.w * Math.cos(yaw);
-        const cellen = m.cells.filter(
-          (c) => c.y + 1 >= p.place.y && c.y + c.h - 1 <= p.place.y + p.place.h,
+        const l = p.place.x + (p.place.w - overspanning) / 2;
+        const r = p.place.x + (p.place.w + overspanning) / 2;
+        const dekking = openings.filter(
+          (o) => o.y + 1 >= p.place.y && o.y + o.h - 1 <= p.place.y + p.place.h && o.x >= l - 2 && o.x + o.w <= r + 2,
         );
-        const dekking = cellen.filter(
-          (c) =>
-            c.x >= p.place.x + (p.place.w - overspanning) / 2 - 2 &&
-            c.x + c.w <= p.place.x + (p.place.w + overspanning) / 2 + 2,
-        );
-        expect(dekking.length, `${p.id} dekt geen enkel vak af`).toBeGreaterThan(0);
+        expect(dekking.length, `${p.id} dekt geen enkele opening af`).toBeGreaterThan(0);
       }
     });
 

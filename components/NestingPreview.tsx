@@ -176,6 +176,7 @@ export default function NestingPreview({
           <div className="mb-2 flex items-center justify-between">
             <span className="text-sm font-semibold">{label}</span>
             <span className="text-xs text-neutral-500">
+              {sheet.stockName ? `${sheet.stockName} · ` : ""}
               {formatMm(sheet.sheetLength)} × {formatMm(sheet.sheetWidth)}
             </span>
           </div>

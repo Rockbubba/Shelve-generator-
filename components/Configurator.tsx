@@ -21,6 +21,10 @@ import {
   MIN_HEIGHT,
   MIN_WIDTH,
   SHEET_MATERIALS,
+  SHEET_LENGTH,
+  SHEET_WIDTH,
+  HDF_SHEET_LENGTH,
+  HDF_SHEET_WIDTH,
   formatMm,
   materialById,
   stripsPerSheetForDepth,
@@ -32,10 +36,15 @@ import { nestPanels } from "@/lib/nesting";
 import {
   downloadAllDxfZip,
   downloadBomCsv,
+  downloadDrawingDxf,
+  downloadDrawingSvg,
+  printDrawing,
   downloadSheetDxf,
 } from "@/lib/export";
 import { buildBom, typeLabel } from "@/lib/bom";
 import Viewer3D from "./Viewer3D";
+import StockEditor from "./StockEditor";
+import { activeScene } from "@/lib/render/scene";
 import BottomSheet, { SheetSnap } from "./BottomSheet";
 import NestingPreview from "./NestingPreview";
 import BomView from "./BomView";
@@ -99,8 +108,12 @@ export default function Configurator() {
 
   const model = useMemo(() => buildCabinetModel(config), [config]);
   const nesting = useMemo(
-    () => nestPanels(model.panels, { allowRotation: !materialById(config.materialId).nerf }),
-    [model, config.materialId],
+    () =>
+      nestPanels(model.panels, {
+        allowRotation: !materialById(config.materialId).nerf,
+        stock: config.sheetStock,
+      }),
+    [model, config.materialId, config.sheetStock],
   );
 
   const admin = useAdminSettings();
@@ -758,6 +771,28 @@ export default function Configurator() {
               update({ nominalThickness, thickness: nominalThickness })
             }
           />
+          <div className="rounded-2xl bg-neutral-50 p-3">
+            <h3 className="text-sm font-semibold">Plaatvoorraad</h3>
+            <p className="mb-3 text-xs text-neutral-500">
+              Grotere platen of restmateriaal van eerdere producties? Geef de maten en
+              aantallen op; de nesting gebruikt ze eerst. De diepte-opties en
+              breedtesnapping blijven op de standaardplaat (2440 × 1220) gebaseerd.
+            </p>
+            <div className="space-y-4">
+              <StockEditor
+                label={`${materialById(config.materialId).naam.split(" ")[0]} ${config.nominalThickness} mm`}
+                stock={config.sheetStock.plaat18}
+                defaultSize={{ length: SHEET_LENGTH, width: SHEET_WIDTH }}
+                onChange={(plaat18) => update({ sheetStock: { ...config.sheetStock, plaat18 } })}
+              />
+              <StockEditor
+                label="HDF 4 mm (rug)"
+                stock={config.sheetStock.hdf4}
+                defaultSize={{ length: HDF_SHEET_LENGTH, width: HDF_SHEET_WIDTH }}
+                onChange={(hdf4) => update({ sheetStock: { ...config.sheetStock, hdf4 } })}
+              />
+            </div>
+          </div>
           {config.joinery === "cabineo" && (
             <Segmented
               label="Cabineo-maat"
@@ -1051,6 +1086,36 @@ export default function Configurator() {
             >
               Print / PDF onderdelenlijst
             </button>
+          </div>
+          <div>
+            <h3 className="mb-1 text-sm font-semibold">Werktekening</h3>
+            <p className="mb-2 text-xs text-neutral-500">
+              Complete kast met voor-, zij- en bovenaanzicht, bemaat, op A3 (Europese
+              projectie). PDF via de printdialoog van de browser.
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                className="btn-touch rounded-xl bg-neutral-900 px-3 py-3 text-sm font-medium text-white active:bg-neutral-700"
+                onClick={() => printDrawing(model, { snapshot: activeScene()?.snapshot() })}
+              >
+                Print / PDF
+              </button>
+              <button
+                type="button"
+                className="btn-touch rounded-xl border border-neutral-300 px-3 py-3 text-sm font-medium active:bg-neutral-100"
+                onClick={() => downloadDrawingSvg(model, { snapshot: activeScene()?.snapshot() })}
+              >
+                SVG
+              </button>
+              <button
+                type="button"
+                className="btn-touch rounded-xl border border-neutral-300 px-3 py-3 text-sm font-medium active:bg-neutral-100"
+                onClick={() => downloadDrawingDxf(model)}
+              >
+                DXF
+              </button>
+            </div>
           </div>
           {admin.toonKosten && (
             <div>

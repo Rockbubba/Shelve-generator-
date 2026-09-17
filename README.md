@@ -8,7 +8,7 @@ onderdelenlijst (CSV + printbare PDF) voor een flatbed CNC met platen van
 ## Stack
 
 - Next.js 14 (App Router) + TypeScript + Tailwind
-- three.js (vanilla) voor de 3D-preview in toon-/palletstijl
+- three.js (vanilla) voor de 3D-preview (PBR-materialen, omgevingslicht, aanzichtenkubus)
 - Nesting en DXF-generatie volledig client-side — geen backend
 
 ## Ontwikkelen
@@ -51,6 +51,18 @@ spaanplaat, HPL; multiplex niet). Contour en bewerkingen draaien in DXF en
 preview mee (gedraaide onderdelen zijn met ↻ gemarkeerd). De preview tekent
 de stroken gestippeld mee. HDF-rugpanelen nesten apart op een eigen
 4mm-plaat.
+
+**Plaatvoorraad.** Onder *Materiaal* staat per materiaal (18 mm en HDF) een
+voorraadlijst: plaatmaat plus aantal. Aantal leeg = onbeperkt (de
+standaardplaat die je bijbestelt); regels met een aantal — restplaten van
+eerdere producties, al ingekochte platen, of een grotere plaatmaat — gebruikt
+de nesting eerst, in lijstvolgorde. Elke plaat heeft daarbij zijn eigen maat:
+een onderdeel dat niet op een restplaat past gaat door naar de volgende maat.
+Is de voorraad op en is er geen onbeperkte maat, dan komen de resterende
+onderdelen op "extra" platen van 2440 × 1220 met een melding hoeveel er
+bijbesteld moeten worden. Yield en platenteller rekenen met het werkelijke
+bruto-oppervlak van de gebruikte platen. De diepte-opties en de
+breedtesnapping blijven op de standaardplaat (2440 × 1220) gebaseerd.
 
 ### Constructie
 
@@ -105,6 +117,27 @@ DXF-formaat (VCarve, Fusion, Illustrator) — lagen gescheiden per bewerking:
 DXF is 2D: de freesdiepte reist mee via de laagconventie. Boringen krijgen
 daarom een expliciet diepte-suffix (`_D15` = 15 mm vanaf het vlak,
 `_DOOR` = doorlopend), zodat je in CAM per laag één diepte instelt.
+
+### Werktekening
+
+Stap 4 exporteert naast de DXF's en de onderdelenlijst een werktekening van
+de complete kast (`lib/drawing.ts`): vooraanzicht, linker zijaanzicht en
+bovenaanzicht volgens de Europese projectiemethode (ISO 128: zijaanzicht
+rechts van het vooraanzicht, bovenaanzicht eronder), op A3 liggend met kader
+en titelblok. De schaal wordt automatisch gekozen uit de standaardreeks
+(1:5 … 1:50) zodat alles op één blad past.
+
+Bemating: totale breedte/hoogte/diepte, kolomopeningen, vakhoogtes van de
+eerste kolom, plinthoogte en -terugligging (of poothoogte), diepte links en
+rechts plus het verloop bij een schuine muur, en in elk vak de binnenmaat
+(b × h). Tussenschotten, deuren, plint en poten staan in het vooraanzicht;
+planken, rug en plint als verborgen (gestreepte) lijnen in het zijaanzicht;
+de bovenplank volgt het voorkantprofiel in het bovenaanzicht.
+
+Uitvoer: **Print / PDF** (nieuw venster op A3, printdialoog van de browser →
+"opslaan als PDF"), **SVG** (vector, met de 3D-weergave uit de viewer in het
+titelblok-vak) of **DXF** (lagen `KADER`, `CONTOUR`, `VERBORGEN` gestreept,
+`MAAT`, `TEKST`; papiercoördinaten in mm).
 
 ### Éénzijdig frezen
 
@@ -263,8 +296,11 @@ boringen op de juiste plek zitten.
   7 mm in en krijgt de bijbehorende inkeping aan de voorhoek — en twee
   schroeven 4 × 40 van onderaf door de plank eronder (`BOOR_4_5MM_DOOR`).
   Bij LED-verlichting krijgt elk schot een Ø10-doorvoer zodat de strip van
-  het vak in delen kan worden doorgelust. Onderdeelnummers `T1…`, in de BOM
-  als "Tussenschot".
+  het vak in delen kan worden doorgelust. Een rugpaneel wordt door de
+  schotten opgedeeld: één paneel per deelvak. Geschroefd overlappen de
+  buurpanelen elk de halve schotdikte (zoals achter een binnenstaander); in
+  sponning krijgt het schot aan beide zijden een groef en vallen de
+  deelpanelen daarin. Onderdeelnummers `T1…`, in de BOM als "Tussenschot".
 - **Plint**: 80 mm hoog tussen de buitenste staanders; standaard 40 mm
   teruggelegd t.o.v. het ondiepste punt van de voorkant, maar ook vlak met
   de voorkant of op een eigen maat (0–150 mm) te zetten. De plint loopt in
@@ -300,8 +336,10 @@ lib/nesting.ts    — strip-nesting, yield
 lib/storage.ts    — concept/ontwerpen in localStorage, deellink
 lib/dxf.ts        — DXF-writer (lagen, polylines, cirkels, tekst)
 lib/bom.ts        — onderdelenlijst + CSV
-lib/export.ts     — downloads (DXF, zip, CSV) met share sheet op mobiel
-lib/render/       — three.js scene (toon-materialen, edges, palletstijl)
+lib/drawing.ts    — werktekening (voor/zij/boven, bemating) → SVG / DXF
+lib/export.ts     — downloads (DXF, zip, CSV, werktekening) met share sheet op mobiel
+lib/render/       — three.js scene (PBR-materialen, omgevingslicht, edges,
+                    aanzichtenkubus, snapshot voor de werktekening)
 components/       — configurator-UI (mobile first: 3D + bottom sheet;
                     desktop: drie kolommen)
 app/              — Next.js App Router
