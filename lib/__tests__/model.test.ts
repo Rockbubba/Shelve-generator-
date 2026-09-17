@@ -1476,3 +1476,29 @@ describe("tussenschotten delen de rug op", () => {
     expect(rugs[1].place.z).toBeGreaterThan(rugs[2].place.z);
   });
 });
+
+describe("plinthoogte instelbaar", () => {
+  it("plint, staander-inkeping en onderste plank volgen de ingestelde hoogte", () => {
+    const base = { ...DEFAULT_CONFIG, base: "plint" as const, columns: 3 };
+    const std = buildCabinetModel(base);
+    const hoog = buildCabinetModel({ ...base, plinthHeight: 120 });
+    const plint = hoog.panels.find((p) => p.type === "plint")!;
+    expect(plint.width).toBe(120);
+    expect(plint.place.h).toBe(120);
+    expect(std.panels.find((p) => p.type === "plint")!.place.h).toBe(80);
+    // Onderste plank ligt 40 mm hoger, totale hoogte gelijk.
+    const lowest = (m: typeof std) => Math.min(...m.panels.filter((p) => p.type === "plank").map((p) => p.place.y));
+    expect(lowest(hoog) - lowest(std)).toBeCloseTo(40, 3);
+    expect(Math.max(...hoog.panels.map((p) => p.place.y + p.place.h))).toBeCloseTo(base.height, 3);
+    // Binnenstaander: inkeping voor-onder reikt tot de plinthoogte.
+    const inner = hoog.panels.find((p) => p.type === "staander" && p.staanderKey)!;
+    expect(inner.contour!.some(([u]) => Math.abs(u - 120) < 0.6)).toBe(true);
+  });
+
+  it("wordt begrensd op 40–200 mm", () => {
+    const laag = buildCabinetModel({ ...DEFAULT_CONFIG, base: "plint", plinthHeight: 10 });
+    const hoog = buildCabinetModel({ ...DEFAULT_CONFIG, base: "plint", plinthHeight: 900 });
+    expect(laag.panels.find((p) => p.type === "plint")!.place.h).toBe(40);
+    expect(hoog.panels.find((p) => p.type === "plint")!.place.h).toBe(200);
+  });
+});

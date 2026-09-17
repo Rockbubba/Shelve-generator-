@@ -127,7 +127,9 @@ export function cabineoEdgeOffsets(depth: number): { a: number; b: number } {
 // ---- Kast -------------------------------------------------------------------
 export const MAX_MODULE_HEIGHT = 2400;
 export const MAX_PART_LENGTH = USABLE_LENGTH; // 2420, geen onderdeel langer dan dit
-export const PLINTH_HEIGHT = 80;
+export const PLINTH_HEIGHT = 80; // standaard plinthoogte
+export const MIN_PLINTH_HEIGHT = 40;
+export const MAX_PLINTH_HEIGHT = 200;
 export const PLINTH_SETBACK = 40; // standaard: plint teruggelegd t.o.v. voorzijde
 export const MAX_PLINTH_SETBACK = 150;
 export const WALL_BRACKET_MANDATORY_HEIGHT = 1500;
@@ -377,6 +379,8 @@ export interface CabinetConfig {
    * (mm). 0 = vlak (flush) met de voorkant; standaard 40.
    */
   plinthSetback: number;
+  /** Hoogte van de voorplint (mm); de romp erboven wordt navenant korter. */
+  plinthHeight: number;
   /** LED-strip achter-boven in elk vak, met kabeldoorvoer door de planken. */
   led: LedConfig;
   /**
@@ -415,6 +419,7 @@ export const DEFAULT_CONFIG: CabinetConfig = {
   color: "#ffffff",
   rugColor: "#e8e4dc",
   plinthSetback: PLINTH_SETBACK,
+  plinthHeight: PLINTH_HEIGHT,
   led: { enabled: false, side: "links", inbouw: true },
   sheetStock: DEFAULT_SHEET_STOCK,
 };

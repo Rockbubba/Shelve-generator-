@@ -10,6 +10,8 @@ import {
   MIN_SUBCELL_WIDTH,
   maxDividersForWidth,
   PLINTH_HEIGHT,
+  MIN_PLINTH_HEIGHT,
+  MAX_PLINTH_HEIGHT,
   PLINTH_SETBACK,
   DEPTH_OPTIONS,
   FrontProfile,
@@ -878,7 +880,16 @@ export default function Configurator() {
             onChange={(base) => update({ base })}
           />
           {config.base === "plint" && (
-            <div className="rounded-xl bg-neutral-50 p-3">
+            <div className="space-y-3 rounded-xl bg-neutral-50 p-3">
+              <Stepper
+                label="Plinthoogte"
+                value={config.plinthHeight}
+                min={MIN_PLINTH_HEIGHT}
+                max={MAX_PLINTH_HEIGHT}
+                step={5}
+                hint={`standaard ${PLINTH_HEIGHT} mm; de romp erboven wordt korter`}
+                onChange={(plinthHeight) => update({ plinthHeight })}
+              />
               <Segmented
                 label="Plint t.o.v. voorkant"
                 options={[
@@ -905,7 +916,7 @@ export default function Configurator() {
                 />
               )}
               <p className="mt-1 text-xs text-neutral-500">
-                Plint van {PLINTH_HEIGHT} mm hoog tussen de buitenste staanders; bij
+                Plint van {config.plinthHeight} mm hoog tussen de buitenste staanders; bij
                 een voorkantprofiel ligt hij achter het ondiepste punt.
               </p>
             </div>

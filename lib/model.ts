@@ -49,6 +49,8 @@ import {
   maxDividersForWidth,
   dividerKey,
   PLINTH_HEIGHT,
+  MIN_PLINTH_HEIGHT,
+  MAX_PLINTH_HEIGHT,
   PLINTH_SETBACK,
   RUG_CLEARANCE,
   RUG_GROOVE_BACK_OFFSET,
@@ -586,6 +588,11 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
   let hingeCount = 0;
   let wideDoorWarned = false;
   let plinthFootWarned = false;
+  // Plinthoogte begrensd; standaard PLINTH_HEIGHT.
+  const plinthHeight = Math.min(
+    MAX_PLINTH_HEIGHT,
+    Math.max(MIN_PLINTH_HEIGHT, config.plinthHeight ?? PLINTH_HEIGHT),
+  );
   /** Totale LED-striplengte (mm) over alle vakken. */
   let ledStripMm = 0;
   let dowelJoints = 0;
@@ -599,7 +606,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
   let moduleBase = 0;
   for (let m = 0; m < moduleCount; m++) {
     const Hm = moduleHeights[m];
-    const plinthOffset = m === 0 && config.base === "plint" ? PLINTH_HEIGHT : 0;
+    const plinthOffset = m === 0 && config.base === "plint" ? plinthHeight : 0;
 
     // Plankniveaus binnen de module: onderste + tussenliggende + bovenste.
     // levelY[j] = onderkant van plank j (j = 0..rows), module-lokaal.
@@ -971,7 +978,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
       // volle diepte naast.
       const skirtNotch = m === 0 && skirtDepth > 0;
       const plinthNotch = hasPlinth && m === 0 && i > 0 && i < columns;
-      const plinthNotchH = Math.min(PLINTH_HEIGHT, Hm - t);
+      const plinthNotchH = Math.min(plinthHeight, Hm - t);
       const vPlinthBack = round1(Math.max(0, plinthBackZ - bi));
       let contour: [number, number][] | undefined;
       if (skirtNotch || plinthNotch) {
@@ -1690,9 +1697,9 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
       type: "plint",
       material: "plaat18",
       length: plintLen,
-      width: PLINTH_HEIGHT,
+      width: plinthHeight,
       thickness: t,
-      ops: [engrave("PL1", plintLen, PLINTH_HEIGHT, "A")],
+      ops: [engrave("PL1", plintLen, plinthHeight, "A")],
       notches: [],
       machineSide: "A",
       place: {
@@ -1700,7 +1707,7 @@ export function buildCabinetModel(config: CabinetConfig): CabinetModel {
         y: 0,
         z: plinthBackZ,
         w: plintLen,
-        h: PLINTH_HEIGHT,
+        h: plinthHeight,
         d: t,
       },
       module: 0,

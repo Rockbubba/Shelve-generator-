@@ -303,7 +303,9 @@ boringen op de juiste plek zitten.
   deelpanelen daarin. Onderdeelnummers `T1…`, in de BOM als "Tussenschot".
 - **Plint**: 80 mm hoog tussen de buitenste staanders; standaard 40 mm
   teruggelegd t.o.v. het ondiepste punt van de voorkant, maar ook vlak met
-  de voorkant of op een eigen maat (0–150 mm) te zetten. De plint loopt in
+  de voorkant of op een eigen maat (0–150 mm) te zetten; de plinthoogte is
+  instelbaar (40–200 mm, standaard 80) en de romp erboven wordt navenant
+  korter. De plint loopt in
   één stuk door, dus elke binnenstaander krijgt voor-onder een inkeping tot
   het achtervlak van de plint (onderdeel van de buitencontour, dus geen
   aparte bewerking). De buitenste staanders houden hun volle diepte en de
