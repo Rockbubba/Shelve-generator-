@@ -30,15 +30,26 @@
       "id": "practice.stage1_sum_first_odd",
       "kind": "practice",
       "title": "Sum of the first n odd numbers",
-      "status": "open",
+      "status": "verified",
       "lean_decl": "Vault.Practice.sum_first_odd",
       "lean_file": "Vault/Practice/Stage1.lean",
       "statement": "For every natural number n, the sum over i < n of (2i + 1) equals n^2.",
       "proposed_by": "vault (stage-one practice target)",
-      "attacked_by": [],
+      "attacked_by": [
+        {
+          "by": "scripted:crew/proposals/stage1_sum_first_odd.lean",
+          "critic": null,
+          "at": "2026-09-06T19:10:57+00:00",
+          "rounds": 1,
+          "result": "verified",
+          "log": "ledger/attempts/practice.stage1_sum_first_odd/20260906T191042Z_*"
+        }
+      ],
       "depends_on": [],
-      "notes": "Shipped open on purpose. First job for the crew runner: provable from Mathlib by induction in a few lines. Close it with `crew/run.py practice.stage1_sum_first_odd`.",
-      "references": []
+      "notes": "Shipped open on purpose as the pipeline's first real job, and closed on 2026-09-06 by a hand-written proposal (crew/proposals/stage1_sum_first_odd.lean) pushed through the door with the scripted provider, because the session that closed it had no model credentials. So this entry shows the door works end to end on a live target: static gate, lake build, #print axioms, ledger flipped by Lean's verdict rather than by hand. It does not show that the generate, critique, verify loop can close anything against a real model. That is still the first job for a run with keys.",
+      "references": [],
+      "verified_at": "2026-09-06T19:10:57+00:00",
+      "verified_by": "scripted:crew/proposals/stage1_sum_first_odd.lean"
     },
     {
       "id": "target.riemann",

@@ -10,11 +10,25 @@ export PATH="$HOME/.elan/bin:$PATH"
 
 ID=practice.stage1_sum_first_odd
 EX=crew/examples/stage1
+ATT=ledger/attempts/$ID
 TMP=$(mktemp -d)
-trap 'cp "$TMP/ledger.json" ledger/ledger.json; cp "$TMP/Stage1.lean" Vault/Practice/Stage1.lean; \
-      rm -rf "ledger/attempts/$ID" "$TMP"; lake build >/dev/null 2>&1 || true' EXIT
+
+# The attempts directory is the record of real runs against this entry, so it
+# is put back as it was rather than deleted: only the rounds this test made
+# are dropped.
+restore() {
+  cp "$TMP/ledger.json" ledger/ledger.json
+  cp "$TMP/Stage1.lean" Vault/Practice/Stage1.lean
+  rm -rf "$ATT"
+  if [ -d "$TMP/attempts" ]; then cp -r "$TMP/attempts" "$ATT"; fi
+  rm -rf "$TMP"
+  lake build >/dev/null 2>&1 || true
+}
+trap restore EXIT
+
 cp ledger/ledger.json "$TMP/ledger.json"
 cp Vault/Practice/Stage1.lean "$TMP/Stage1.lean"
+if [ -d "$ATT" ]; then cp -r "$ATT" "$TMP/attempts"; fi
 
 expect() {  # expect <exit-code> <label> <args...>
   local want=$1 label=$2; shift 2
@@ -25,7 +39,6 @@ expect() {  # expect <exit-code> <label> <args...>
   echo "ok   $label (exit $got)"
 }
 
-# The circularity gate. Neither case needs Lean: both fail before a build.
 patch_ledger() {  # patch_ledger <python statements operating on the entry `e`>
   python3 - "$1" <<'PYPATCH'
 import json, pathlib, sys
@@ -38,6 +51,15 @@ p.write_text(json.dumps(led, indent=2, ensure_ascii=False) + "\n")
 PYPATCH
 }
 
+# Stage one is `verified` in the ledger now that it has been closed, so put
+# the entry back in the state these tests need: the `sorry` file on disk and
+# an `open` status. The trap above restores the real thing afterwards.
+cp $EX/open.lean Vault/Practice/Stage1.lean
+patch_ledger 'e["status"] = "open"; e.pop("verified_at", None); e.pop("verified_by", None); e["attacked_by"] = []'
+cp ledger/ledger.json "$TMP/open_ledger.json"
+reset_open() { cp "$TMP/open_ledger.json" ledger/ledger.json; cp $EX/open.lean Vault/Practice/Stage1.lean; }
+
+# The circularity gate. Neither case needs Lean: both fail before a build.
 patch_ledger 'e["toward"] = "target.riemann"'
 if python3 scripts/audit.py --schema >/dev/null 2>&1; then
   echo "FAIL: entry serving a target with no circularity assessment passed the schema"; exit 1
@@ -47,7 +69,7 @@ echo "ok   missing circularity rejected by the schema"
 patch_ledger 'e["toward"] = "target.riemann"; e["circularity"] = {"verdict": "unassessed"}'
 expect 2 "unassessed circularity refused" --proposer scripted:$EX/good.lean --rounds 1
 grep -q "sorry" Vault/Practice/Stage1.lean || { echo "FAIL: the gate let the proposer run anyway"; exit 1; }
-cp "$TMP/ledger.json" ledger/ledger.json
+reset_open
 
 lake build >/dev/null 2>&1
 expect 1 "tampered statement rejected"  --proposer scripted:$EX/tampered.lean    --rounds 1
